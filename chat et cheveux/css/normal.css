@@ -145,6 +145,8 @@ a.brokenLink
 	color:#000;
 	margin-right:12px;
 	padding:3px;
+	font-size: 12px;
+	line-height: 12px;
 }
 
 .passage ol
