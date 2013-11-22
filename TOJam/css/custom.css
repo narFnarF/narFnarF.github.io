@@ -1,0 +1,109 @@
+body {
+margin: 0px;
+background-color: gray;
+background-image: url(background.png);
+background-attachment: fixed;
+color: rgb(216, 216, 216);
+}
+
+#narF_middlewrapper {
+width: 800px;
+margin-top: 32px;
+margin-left: auto;
+margin-right: auto;
+margin-bottom: 100px;
+border-radius: 20px;
+background-color: rgba(0, 0, 0, 0.78);
+padding-bottom: 2em;
+padding-top: 2em;
+}
+
+#title {
+text-align: center;
+margin-bottom: 2.5em;
+margin-left: 2em;
+margin-right: 2em;
+color: rgba(255, 255, 255, 0.86);
+}
+
+
+#storySubtitle{
+font-size: 0.8em;
+}
+
+#storyTitle {
+font-size: 2em;
+line-height: 140%;
+font-weight: bold;
+}
+
+#sidebar{
+visibility: hidden;
+}
+
+#passages{
+margin-right: 2em;
+margin-left: 2em;
+margin-bottom: 2em;
+/* overflow: auto; */
+text-align: justify;
+font-size: 1.7em;
+line-height: 1.6em;
+}
+
+
+#restart{
+position: fixed;
+left: 20px;
+top: 20px;
+padding: 5px;
+border-radius: 7px;
+border: 3px solid rgb(250, 0, 0);
+background-color: rgb(255, 97, 97);
+color: rgb(202, 0, 0)!important;
+cursor: pointer;
+visibility: visible;
+}
+
+#restart:hover{
+background-color: rgb(255, 131, 152);
+color: rgb(109, 1, 1)!important;
+}
+
+#narF_footer{
+background-color: rgba(218, 94, 25, 0.88);
+color: black;
+padding: 10px;
+border: 2px solid rgba(190, 133, 133, 0.69);
+border-radius: 9px;
+position: fixed;
+bottom: 10px;
+left: 10px;
+}
+
+#narF_footer div {
+display: inline-block;
+padding: 1em;
+}
+
+#narF_footer img {
+height: 4em;
+width: auto;
+}
+
+.centrerVertical {
+display: inline-block;
+vertical-align: middle;
+}
+
+#narF_footer a{
+color: rgb(5, 46, 179);
+}
+#narF_footer a:hover{
+color: rgb(74, 84, 197);
+}
+
+.passage[data-tags~=exemple] {
+background-color: orange;
+color: black;
+}
