@@ -1,0 +1,2738 @@
+﻿<!DOCTYPE html>
+<!--[if lte IE 8]> <html class="lt-ie9"> <![endif]-->
+<!--[if gt IE 8]><!--> <html> <!--<![endif]-->
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!--
+Made in Twee 1.4.2
+Built on 19 Feb 2014 at 11:12:58, -0500
+
+Sugarcane is based on:
+
+TiddlyWiki 1.2.39 by Jeremy Ruston, (jeremy [at] osmosoft [dot] com)
+
+Published under a BSD open source license
+
+Copyright (c) Osmosoft Limited 2005
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+Redistributions of source code must retain the above copyright notice, this
+list of conditions and the following disclaimer.
+
+Redistributions in binary form must reproduce the above copyright notice, this
+list of conditions and the following disclaimer in the documentation and/or other
+materials provided with the distribution.
+
+Neither the name of the Osmosoft Limited nor the names of its contributors may be
+used to endorse or promote products derived from this software without specific
+prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
+EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT
+SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR
+BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
+DAMAGE.
+-->
+<title>Sugarcane</title>
+<script title="engine">
+(function(){
+
+function clone(a) {
+    var b = {};
+    if (!a || typeof a != "object") {
+        return a;
+    }
+    for (var property in a) {
+        if (typeof a[property] == "object") {
+            try {
+                b[property] = JSON.parse(JSON.stringify(a[property]));
+                continue;
+            }
+            catch(e) {}
+        }
+        b[property] = a[property];
+    }
+    return b;
+}
+function insertElement(a, d, f, c, e) {
+    var b = document.createElement(d);
+    if (f) {
+        b.id = f
+    }
+    if (c) {
+        b.className = c
+    }
+    if (e) {
+        insertText(b, e)
+    }
+    if (a) {
+        a.appendChild(b)
+    }
+    return b
+}
+
+function insertText(a, b) {
+    return a.appendChild(document.createTextNode(b))
+}
+
+function removeChildren(a) {
+    while (a.hasChildNodes()) {
+        a.removeChild(a.firstChild)
+    }
+}
+
+function findPassageParent(el) {
+    while(el && el != document.body && !~el.className.indexOf("passage")) {
+        el = el.parentNode;
+    }
+    return el == document.body ? null : el;
+}
+
+function setPageElement(c, b, a) {
+    var place;
+    if (place = (typeof c == "string" ? document.getElementById(c) : c)) {
+        removeChildren(place);
+        if (tale.has(b)) {
+            new Wikifier(place, tale.get(b).processText())
+        } else {
+            new Wikifier(place, a)
+        }
+    }
+}
+
+// Kept for custom script use
+function addStyle(b) {
+    if (document.createStyleSheet) {
+        document.getElementsByTagName("head")[0].insertAdjacentHTML("beforeEnd", "&nbsp;<style>" + b + "</style>")
+    } else {
+        var a = document.createElement("style");
+        a.appendChild(document.createTextNode(b));
+        document.getElementsByTagName("head")[0].appendChild(a)
+    }
+}
+
+function alterCSS(text) {
+    var temp = '', imgPassages = tale.lookup("tags", "Twine.image");
+    // Remove comments
+    text = text.replace(/\/\*(?:[^\*]|\*(?!\/))*\*\//g,'');
+    // Replace :link
+    text = text.replace(/:link/g,"[class*=Link]");
+    // Replace :visited
+    text = text.replace(/:visited/g,".visitedLink");
+    // Hoist @import
+    text = text.replace(/@import\s+(?:url\s*\(\s*['"]?|['"])[^"'\s]+(?:['"]?\s*\)|['"])\s*([\w\s\(\)\d\:,\-]*);/g, function(e) {
+        temp += e; return '';
+    });
+    text = temp + text;
+    
+    // Add images
+    return text.replace(new RegExp(Wikifier.imageFormatter.lookahead, "gim"), function(m,p1,p2,p3,src) {
+        for (var i = 0; i < imgPassages.length; i++) {
+            if (imgPassages[i].title == src) {
+                src = imgPassages[i].text;
+                break;
+            }
+        }
+        return "url(" + src + ")"
+    });
+}
+
+function setTransitionCSS(styleText) {
+    styleText = alterCSS(styleText);
+    var style = document.getElementById("transitionCSS");
+    style.styleSheet ? (style.styleSheet.cssText = styleText) : (style.innerHTML = styleText);
+}
+
+function throwError(a, b, tooltip) {
+    if (a) {
+        var elem = insertElement(a, "span", null, "marked", b);
+        tooltip && elem.setAttribute("title", tooltip);
+    } else {
+        alert("There is a technical problem with this story: " + b + "."+softErrorMessage);
+    }
+}
+Math.easeInOut = function (a) {
+    return (1 - ((Math.cos(a * Math.PI) + 1) / 2))
+};
+String.prototype.readMacroParams = function (keepquotes) {
+    var exec, re = /(?:\s*)(?:(?:"([^"]*)")|(?:'([^']*)')|(?:\[\[((?:[^\]]|\](?!\]))*)\]\])|([^"'\s]\S*))/mg,
+        params = [];
+    do {
+        var val;
+        exec = re.exec(this);
+        if (exec) {
+            if (exec[1]) {
+                val = exec[1];
+                keepquotes && (val = '"' + val + '"');
+            } else if (exec[2]) {
+                val = exec[2];
+                keepquotes && (val = "'" + val + "'");
+            } else if (exec[3]) {
+                val = exec[3];
+                keepquotes && (val = '"' + val.replace('"','\\"') + '"');
+            } else if (exec[4]) {
+                val = exec[4];
+            }
+            val && params.push(val);
+        }
+    } while (exec);
+    return params
+};
+String.prototype.readBracketedList = function () {
+    var c, b = "\\[\\[([^\\]]+)\\]\\]",
+        a = "[^\\s$]+",
+        e = "(?:" + b + ")|(" + a + ")",
+        d = new RegExp(e, "mg"),
+        f = [];
+    do {
+        c = d.exec(this);
+        if (c) {
+            if (c[1]) {
+                f.push(c[1])
+            } else {
+                if (c[2]) {
+                    f.push(c[2])
+                }
+            }
+        }
+    } while (c);
+    return (f)
+};
+String.prototype.trim || (String.prototype.trim = function () {
+    return this.replace(/^\s\s*/, "").replace(/\s\s*$/, "")
+});
+String.prototype.unDash = function () {
+    var s = this.split("-");
+    if (s.length > 1) for (var t = 1; t < s.length; t++)
+    s[t] = s[t].substr(0, 1).toUpperCase() + s[t].substr(1);
+    return s.join("");
+}
+Array.prototype.indexOf || (Array.prototype.indexOf = function (b, d) {
+    d = (d == null) ? 0 : d;
+    var a = this.length;
+    for (var c = d; c < a; c++) {
+        if (this[c] == b) {
+            return c
+        }
+    }
+    return -1
+});
+/* btoa/atob polyfill by github.com/davidchambers */
+(function(){function t(t){this.message=t}var e=window,r="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";t.prototype=Error(),t.prototype.name="InvalidCharacterError",e.btoa||(e.btoa=function(e){for(var o,n,a=0,i=r,c="";e.charAt(0|a)||(i="=",a%1);c+=i.charAt(63&o>>8-8*(a%1))){if(n=e.charCodeAt(a+=.75),n>255)throw new t();o=o<<8|n}return c}),e.atob||(e.atob=function(e){if(e=e.replace(/=+$/,""),1==e.length%4)throw new t();for(var o,n,a=0,i=0,c="";n=e.charAt(i++);~n&&(o=a%4?64*o+n:n,a++%4)?c+=String.fromCharCode(255&o>>(6&-2*a)):0)n=r.indexOf(n);return c})})();
+
+var hasTransition = 'transition' in document.documentElement.style || '-webkit-transition' in document.documentElement.style;
+
+function fade(f, c) {
+    var h;
+    var e = f.cloneNode(true);
+    var g = (c.fade == "in") ? 1 : -1;
+    f.parentNode.replaceChild(e, f);
+    if (c.fade == "in") {
+        h = 0;
+        e.style.visibility = "visible"
+    } else {
+        h = 1
+    }
+    b(e, h);
+    var a = window.setInterval(d, 25);
+
+    function d() {
+        h += 0.05 * g;
+        b(e, Math.easeInOut(h));
+        if (((g == 1) && (h >= 1)) || ((g == -1) && (h <= 0))) {
+            f.style.visibility = (c.fade == "in") ? "visible" : "hidden";
+            if (e.parentNode) {
+                e.parentNode.replaceChild(f, e);
+            }
+            window.clearInterval(a);
+            if (c.onComplete) {
+                c.onComplete.call(f)
+            }
+        }
+    }
+
+    function b(k, j) {
+        var l = Math.floor(j * 100);
+        k.style.zoom = 1;
+        k.style.filter = "alpha(opacity=" + l + ")";
+        k.style.opacity = j
+    }
+}
+
+var scrollWindowInterval;
+function scrollWindowTo(e, margin) {
+    var d = window.scrollY ? window.scrollY : document.documentElement.scrollTop,
+        m = window.innerHeight ? window.innerHeight : document.documentElement.clientHeight,
+        g = k(e),
+        j = (d > g) ? -1 : 1,
+        b = 0,
+        c = Math.abs(d - g);
+    scrollWindowInterval && window.clearInterval(scrollWindowInterval);
+    if (c) {
+        scrollWindowInterval = window.setInterval(h, 25);
+    }
+    
+    function h() {
+        b += 0.1;
+        window.scrollTo(0, d + j * (c * Math.easeInOut(b)));
+        if (b >= 1) {
+            window.clearInterval(scrollWindowInterval)
+        }
+    }
+
+    function k(o) {
+        var p = a(o),
+            h = o.offsetHeight,
+            n = d + m;
+        p = Math.min(Math.max(p + (margin || 0) * ( p < d ? -1 : 1), 0), n);
+        if (p < d) {
+            return p
+        } else {
+            if (p+h > n) {
+                if (h < m) {
+                    return (p - (m - h) + 20)
+                } else {
+                    return p
+                }
+            } else {
+                return p
+            }
+        }
+    }
+
+    function a(l) {
+        var m = 0;
+        while (l.offsetParent) {
+            m += l.offsetTop;
+            l = l.offsetParent
+        }
+        return m
+    }
+}
+
+function delta(old,neu) {
+    var vars, ret = {};
+    if (old && neu) {
+        for (vars in neu) {
+            if (neu[vars] !== old[vars]) {
+                ret[vars] = neu[vars];
+            }
+        }
+    }
+    return ret;
+}
+
+function History() {
+    this.history = [{
+        passage: null,
+        variables: {}
+    }]
+    // Unique identifier for this game session
+    this.id = new Date().getTime()+'';
+}
+
+History.prototype.encodeHistory = function(b, noVars) {
+    var ret = ".", vars, type, hist = this.history[b],
+        d = this.history[b+1] ? delta(this.history[b+1].variables, hist.variables) : hist.variables;
+    
+    function vtob(str) {
+        try {
+            return window.btoa(unescape(encodeURIComponent(JSON.stringify(str))));
+        } catch(e) {
+            return "0";
+        }
+    }
+    
+    if (!hist.passage || hist.passage.id == null) {
+        return ""
+    }
+    ret += hist.passage.id.toString(36)
+    if (noVars) {
+        return ret;
+    }
+    for (vars in d) {
+        type = typeof d[vars];
+        if (type != "function" && type != "undefined") {
+            ret += "$" + vtob(vars) + "," + vtob(d[vars]);
+        }
+    }
+    for (vars in hist.linkVars) {
+        type = typeof hist.linkVars[vars];
+        if (type != "function" && type != "undefined") {
+            ret += "[" + vtob(vars) + "," + vtob(hist.linkVars[vars]);
+        }
+    }
+    return ret
+};
+
+History.prototype.decodeHistory = function(str, prev) {
+    var name, splits, variable, c, d, 
+        ret = { variables: clone(prev.variables) || {} },
+        match = /([a-z0-9]+)((?:\$[A-Za-z0-9\+\/=]+,[A-Za-z0-9\+\/=]+)*)((?:\[[A-Za-z0-9\+\/=]+,[A-Za-z0-9\+\/=]+)*)/g.exec(str);
+    
+    function btov(str) {
+        try {
+            return JSON.parse(decodeURIComponent(escape(window.atob(str))));
+        } catch(e) {
+            return 0;
+        }
+    }
+    if (match) {
+        name = parseInt(match[1], 36);
+        if (!tale.has(name)) {
+            return false
+        }
+        if (match[2]) {
+            ret.variables || (ret.variables = {});
+            splits = match[2].split('$');
+            for (c = 0; c < splits.length; c++) {
+                variable = splits[c].split(",");
+                d = btov(variable[0]);
+                if (d) {
+                    ret.variables[d]=btov(variable[1]);
+                }
+            }
+        }
+        if (match[3]) {
+            ret.linkVars || (ret.linkVars = {});
+            splits = match[3].split('[');
+            for (c = 0; c < splits.length; c++) {
+                variable = splits[c].split(",");
+                d = btov(variable[0]);
+                if (d) {
+                    ret.linkVars[d]=btov(variable[1]);
+                }
+            }
+        }
+        ret.passage = tale.get(name);
+        return ret;
+    }
+};
+
+History.prototype.save = function (c) {
+    var hist, b, a = "";
+
+    for (b = this.history.length - 1; b >= 0; b--) {
+        hist = this.history[b];
+        if (!hist) {
+            break;
+        }
+        a += this.encodeHistory(b);
+    }
+    return "#" + a
+};
+
+History.prototype.restore = function () {
+    var a, b, c, vars;
+
+    try {
+        if (testplay) {
+            this.display(testplay, null, 'quietly');
+            return true
+        }
+        if (!window.location.hash || (window.location.hash == "#")) {
+            return false
+        }
+        if (window.location.hash.substr(0, 2) == '#!') {
+            c = window.location.hash.substr(2).split('_').join(' ');
+            this.display(c, null, 'quietly');
+            return true
+        }
+        a = window.location.hash.replace("#", "").split(".");
+        for (b = 0; b < a.length; b++) {
+            vars = this.decodeHistory(a[b], vars || {});
+            if (vars) {
+                if (b == a.length - 1) {
+                    vars.variables = clone(this.history[0].variables);
+                    for (c in this.history[0].linkVars) {
+                        vars.variables[c] = clone(this.history[0].linkVars[c]);
+                    }
+                    this.history.unshift(vars);
+                    this.display(vars.passage.title, null, "back");
+                }
+                else {
+                    this.history.unshift(vars);
+                }
+            }
+        }
+        return true
+    } catch (d) {
+        return false
+    }
+};
+
+History.prototype.saveVariables = function(c, el, callback) {
+    this.history.unshift({
+        passage: c,
+        variables: clone(this.history[0].variables)
+    });
+    // Setter links
+    if (typeof callback == "function") {
+        callback.call(el);
+        this.history[1] && (this.history[1].linkVars = delta(this.history[1].variables,this.history[0].variables));
+    }
+};
+var restart = History.prototype.restart = function () {
+    if (typeof window.history.replaceState == "function") {
+        this.pushState(true, window.location.href.replace(/#.*$/,''));
+        window.location.reload()
+    }
+    else {
+        window.location.hash = "";
+    }
+};
+
+var version = {
+    major: 4,
+    minor: 2,
+    revision: 0,
+    date: new Date("2014"),
+    extensions: {}
+};
+var testplay, tale, state, prerender = {}, postrender = {}, macros = window.macros = {};
+
+version.extensions.displayMacro = {
+    major: 2,
+    minor: 0,
+    revision: 0
+};
+macros.display = {
+    // Used by parameter() and parameterValue()
+    parameters: [],
+    handler: function (place, macroName, params, parser) {
+        var t, j, output, oldDisplayParams, name = parser.fullArgs();
+        
+        if (macroName != "display") {
+            output = macroName;
+            // Shorthand displays can have parameters
+            params = name.readMacroParams(true);
+            try {
+                for(j=0; j < params.length; j++) {
+                    params[j] = eval(Wikifier.parse(params[j]));
+                }
+            } catch (e) {
+                throwError(place, "<<" + macroName + " " + name + ">> bad argument: " + params[j], parser.fullMatch());
+                return
+            }
+        }
+        else {
+            try {
+                output = eval(name);
+            }
+            catch(e) {
+            }
+            if (output == null) {
+                // Last-ditch attempt
+                if (tale.has(name)) {
+                    output = name;
+                }
+                else {
+                    throwError(place, "<<" + macroName + ">> bad expression: " + e.message,
+                        parser.fullMatch());
+                    return
+                }
+            }
+        }
+        if (!output) {
+            throwError(place, '"' +name + "\" did not evaluate to a passage name", parser.fullMatch());
+        } else if (!tale.has(output+"")) {
+            throwError(place, "The \"" + output + "\" passage does not exist", parser.fullMatch());
+        } else {
+            oldDisplayParams = this.parameters;
+            this.parameters = params;
+            t = tale.get(output+"");
+            if (t.tags.indexOf("script") > -1) {
+                scriptEval(t);
+            }
+            else {
+                new Wikifier(place, t.processText());
+            }
+            this.parameters = oldDisplayParams; 
+        }
+    }
+};
+
+version.extensions.actionsMacro = {
+    major: 1,
+    minor: 2,
+    revision: 0
+};
+macros.actions = {
+    handler: function (a, f, g) {
+        var v = state.history[0].variables, e = insertElement(a, "ul");
+        if (!v["actions clicked"]) {
+            v["actions clicked"] = {}
+        }
+        for (var b = 0; b < g.length; b++) {
+            if (v["actions clicked"][g[b]]) {
+                continue
+            }
+            var d = insertElement(e, "li");
+            var c = Wikifier.createInternalLink(d, g[b], (function(link) {
+                return function() { state.history[0].variables["actions clicked"][link] = true; }
+            }(g[b])));
+            insertText(c, g[b]);
+        }
+    }
+};
+version.extensions.printMacro = {
+    major: 1,
+    minor: 1,
+    revision: 1
+};
+macros.print = {
+    handler: function (place, macroName, params, parser) {
+        try {
+            var args = parser.fullArgs(macroName != "print"),
+                output = eval(args);
+            if (output != null && (typeof output != "number" || !isNaN(output))) {
+                new Wikifier(place, ''+output);
+            }
+        } catch (e) {
+            throwError(place, "<<print>> bad expression: " + e.message, parser.fullMatch());
+        }
+    }
+};
+version.extensions.setMacro = {
+    major: 1,
+    minor: 1,
+    revision: 0
+};
+macros.set = {
+    handler: function (a, b, c, parser) {
+        macros.set.run(a, parser.fullArgs(), parser)
+    },
+    run: function (a,expression, parser) {
+        try {
+            return eval(expression);
+        } catch (e) {
+            throwError(a, "bad expression: " + e.message, parser ? parser.fullMatch() : expression)
+        }
+    }
+};
+version.extensions.ifMacros = {
+    major: 2,
+    minor: 0,
+    revision: 0
+};
+macros["if"] = {
+    handler: function (place, macroName, params, parser) {
+        var conditions = [],
+            clauses = [],
+            srcOffset = parser.source.indexOf(">>", parser.matchStart) + 2,
+            src = parser.source.slice(srcOffset),
+            endPos = -1,
+            currentCond = parser.fullArgs(),
+            currentClause = "",
+            t = 0,
+            nesting = 0;
+        for (var i = 0; i < src.length; i++) {
+            if (src.substr(i, 9) == "<<endif>>") {
+                nesting--;
+                if (nesting < 0) {
+                    endPos = srcOffset + i + 9;
+                    conditions.push(currentCond.trim());
+                    clauses.push(currentClause);
+                    break;
+                }
+            }
+            if ((src.substr(i, 6) == "<<else") && !nesting) {
+                conditions.push(currentCond.trim());
+                clauses.push(currentClause);
+                currentClause="";
+                t = src.indexOf(">>",i+6);
+                if(src.substr(i+6,4)==" if " || src.substr(i+6,3)=="if ") {
+                    currentCond = Wikifier.parse(src.slice(i+9,t));
+                }
+                else {
+                    currentCond = "true";
+                }
+                i = t+2;
+            }
+            if (src.substr(i, 5) == "<<if ") {
+                nesting++;
+            }
+            currentClause += src.charAt(i);
+        }
+        try {
+            if (endPos != -1) {
+                parser.nextMatch = endPos;
+                for(i=0;i<clauses.length;i++) {
+                    if (eval(conditions[i])) {
+                        new Wikifier(place, clauses[i]);
+                        break;
+                    }
+                }
+            } else {
+                throwError(place, "can't find matching endif", parser.fullMatch());
+            }
+        } catch (e) {
+            throwError(place, "<<if>> bad condition: " + e.message, !i ? parser.fullMatch()
+                : "<<else if " + conditions[i] + ">>");
+        }
+    }
+};
+macros["else"] = macros.elseif = macros.endif = {
+    handler: function () {}
+};
+
+version.extensions.rememberMacro = {
+    major: 2,
+    minor: 0,
+    revision: 0
+};
+macros.remember = {
+    handler: function (place, macroName, params, parser) {
+        var variable, value, re, match,
+            statement = params.join(" ");
+        macros.set.run(place, parser.fullArgs());
+        if (!window.localStorage) {
+            throwError(place, "<<remember>> can't be used "
+                + (window.location.protocol == "file:" ? " by local HTML files " : "") + " in this browser.",parser.fullMatch());
+            return;
+        }
+        re = new RegExp(Wikifier.textPrimitives.variable, "g");
+        while (match = re.exec(statement)) {
+            variable = match[1];
+            value = state.history[0].variables[variable];
+            try {
+                value = JSON.stringify(value);
+            } catch (e) {
+                throwError(place, "can't remember $" + variable + " (" + (typeof value) + ")", parser.fullMatch());
+                return;
+            }
+            window.localStorage[this.prefix + variable] = value;
+        }
+    },
+    init: function () {
+        var i, variable, value;
+        if (tale.has("StoryTitle")) {
+            this.prefix = "Twine." + tale.title + ".";
+        } else {
+            this.prefix = "Twine.Untitled Story.";
+        }
+        for (i in window.localStorage) {
+            if (i.indexOf(this.prefix) == 0) {
+                variable = i.substr(this.prefix.length);
+                value = window.localStorage[i];
+                try {
+                    value = JSON.parse(value);
+                    state.history[0].variables[variable]=value;
+                } catch (e) {
+                }
+            }
+        }
+    },
+    expire: null,
+    prefix: null
+};
+
+version.extensions.forgetMacro = {
+    major: 1,
+    minor: 0,
+    revision: 0
+};
+macros.forget = {
+    handler: function (place, macroName, params) {
+        var re, match, variable,
+            statement = params.join(" ");
+        re = new RegExp(Wikifier.textPrimitives.variable, "g");
+        while (match = re.exec(statement)) {
+            variable = match[1] + ""
+            delete state.history[0].variables[variable];
+            delete window.localStorage[macros.remember.prefix + variable];
+        }
+    }
+};
+            
+version.extensions.SilentlyMacro = {
+    major: 1,
+    minor: 1,
+    revision: 0
+};
+macros.nobr = macros.silently = {
+    handler: function (place, macroName, f, parser) {
+        var i, h = insertElement(null, 'div'),
+            k = parser.source.indexOf('>>', parser.matchStart) + 2,
+            a = parser.source.slice(k),
+            d = -1,
+            c = '',
+            l = 0;
+        for (i = 0; i < a.length; i++) {
+            if (a.substr(i, macroName.length+7) == '<<end' + macroName + '>>') {
+                if (l == 0) {
+                    d = k + i + macroName.length+7;
+                    break;
+                } else {
+                    l--;
+                }
+            } else if (a.substr(i, macroName.length+4) == '<<' + macroName + '>>') {
+                l++;
+            }
+            if (macroName == "nobr" && a.charAt(i) == '\n') {
+                c += "\u200c"; // Zero-width space
+            }
+            else {
+                c += a.charAt(i);
+            }
+        }
+        if (d != -1) {
+            new Wikifier(macroName == "nobr" ? place : h, c);
+            parser.nextMatch = d;
+        } else {
+            throwError(place, "can't find matching end" + macroName, parser.fullMatch());
+        }
+    }
+};
+macros.endsilently = {
+    handler: function () {}
+};
+
+version.extensions.choiceMacro = {
+    major: 2,
+    minor: 0,
+    revision: 0
+};
+macros.choice = {
+    callback: function() {
+        var i, other, passage = findPassageParent(this);
+        
+        if (passage) {
+            other = passage.querySelectorAll(".choice");
+            for (i = 0; i < other.length; i++) {
+                other[i].outerHTML = "<span class=disabled>" + other[i].innerHTML + "</span>";
+            }
+            state.history[0].variables["choice clicked"][passage.id.replace(/\|[^\]]*$/,'')] = true;
+        }
+    },
+    handler: function (A, C, D, parser) {
+        var link, id, match,
+            text = D[1] || D[0].split("|")[0],
+            passage = findPassageParent(A);
+        // Get ID of the "choice clicked" entry
+        if (!passage) {
+            throwError(A, "<<"+C+">> can't be used here.",parser.fullMatch());
+            return;
+        }
+        id = (passage && passage.id.replace(/\|[^\]]*$/,''));
+        if (id && (state.history[0].variables["choice clicked"] || 
+                (state.history[0].variables["choice clicked"] = {}))[id]) {
+            insertElement(A, "span", null, "disabled", text); 
+        }
+        else {
+            match = new RegExp(Wikifier.linkFormatter.lookahead).exec(parser.fullMatch());
+            
+            if (match) {
+                link = Wikifier.linkFormatter.makeLink(A,match,this.callback);
+            }
+            else {
+                link = Wikifier.linkFormatter.makeLink(A,[0,text,D[0]],this.callback);
+            }
+            link.className += " " + C;
+        }
+    }
+};
+
+version.extensions.backMacro = {
+    major: 2,
+    minor: 0,
+    revision: 0
+};
+macros.back = {
+    labeltext: '&#171; back',
+    handler: function (a, b, e, parser) {
+        var labelParam, c, el,
+            labeltouse = this.labeltext,
+            steps = 1,
+            stepsParam = e.indexOf("steps"),
+            stepsParam2 = "";
+        // Steps parameter
+        if(stepsParam > 0) {
+            stepsParam2 = e[stepsParam - 1];
+            if(stepsParam2[0] == '$') {
+                try {
+                    stepsParam2 = eval(Wikifier.parse(stepsParam2));
+                }
+                catch(r) {
+                    throwError(a, "<<"+b + ">> bad expression: " + r.message, parser.fullMatch())
+                    return;
+                }
+            }
+            // Previously, trying to go back more steps than were present in the
+            // history would silently revert to just 1 step. 
+            // Instead, let's just go back to the start.
+            steps = +stepsParam2;
+            if(steps >= state.history.length - 1) {
+                steps = state.history.length - 2;
+            }
+            e.splice(stepsParam - 1, 2);
+        }
+        // Label parameter
+        labelParam = e.indexOf("label");
+        if(labelParam > -1) {
+            if(!e[labelParam + 1]) {
+                throwError(a, e[labelParam] + ' keyword needs an additional label parameter', parser.fullMatch());
+                return;
+            }
+            labeltouse = e[labelParam + 1];
+            if(e[labelParam] == 'labeldefault') this.labeltext = labeltouse;
+            e.splice(labelParam, 2);
+        }
+        // What's left is the passage name parameter
+        if(stepsParam <= 0) {
+            if(e[0]) {
+                if(e[0].charAt(0) == '$') {
+                    try {
+                        e = eval(Wikifier.parse(e[0]));
+                    }
+                    catch(r) {
+                        throwError(a, "<<" + b + ">> bad expression: " + r.message, parser.fullMatch())
+                        return;
+                    }
+                }
+                else {
+                    e = e[0];
+                }
+                if(!tale.has(e)) {
+                    throwError(a, "The \"" + e + "\" passage does not exist",parser.fullMatch());
+                    return;
+                }
+                for(c = 0; c < state.history.length; c++) {
+                    if(state.history[c].passage.title == e) {
+                        steps = c;
+                        break;
+                    }
+                }
+            }
+        }
+        el = document.createElement("a");
+        el.className = b;
+        el.onclick = (function(b) { return function () {
+            return macros.back.onclick(b == "back", steps, el)
+        }}(b));
+        el.innerHTML = labeltouse;
+        a.appendChild(el);
+    }
+};
+
+version.extensions.returnMacro = {
+    major: 2,
+    minor: 0,
+    revision: 0
+};
+macros["return"] = {
+  labeltext: '&#171; return',
+  handler: function(a,b,e) { 
+    macros.back.handler.call(this,a,b,e);
+  }
+};
+
+version.extensions.textInputMacro = {
+    major: 2,
+    minor: 0,
+    revision: 0
+};
+macros.checkbox = macros.radio = macros.textinput = {
+    handler: function (A, C, D, parser) {
+        var match,
+            class_ = C.replace('input','Input'),
+            q = A.querySelectorAll('input'),
+            id = class_ + "|" + ((q && q.length) || 0);
+            input = insertElement(null, 'input', id, class_);
+        
+        input.name=D[0];
+        input.type=C.replace('input','');
+        // IE 8 support - delay insertion until now
+        A.appendChild(input);
+        
+        if (C == "textinput" && D[1]) {
+            match = new RegExp(Wikifier.linkFormatter.lookahead).exec(parser.fullMatch());
+            
+            if (match) {
+                Wikifier.linkFormatter.makeLink(A,match, macros.button.callback, 'button');
+            }
+            else {
+                Wikifier.linkFormatter.makeLink(A,[0,(D[2] || D[1]),D[1]], macros.button.callback, 'button');
+            }
+        }
+        else if ((C == "radio" || C == "checkbox") && D[1]) {
+            input.value = D[1];
+            insertElement(A, 'label','', '', D[1]).setAttribute('for',id);
+            if (D[2]) {
+                insertElement(A,'br');
+                D.splice(1,1);
+                macros[C].handler(A,C,D)
+            }
+        }
+    }
+};
+
+version.extensions.buttonMacro = {
+    major: 1,
+    minor: 0,
+    revision: 0
+};
+macros.button = {
+    callback: function() {
+        var el = findPassageParent(this);
+        if (el) {
+            var inputs = el.querySelectorAll("input");
+            for (i = 0; i < inputs.length; i++) {
+                if (inputs[i].type!="checkbox" && (inputs[i].type!="radio" || inputs[i].checked)) {
+                    macros.set.run(null, Wikifier.parse(inputs[i].name+' = "'+inputs[i].value.replace(/"/g,'\\"')+'"'));
+                }
+                else if (inputs[i].type=="checkbox" && inputs[i].checked) {
+                    macros.set.run(null, Wikifier.parse(
+                        inputs[i].name+' = [].concat('+inputs[i].name+' || []);'));
+                    macros.set.run(null, Wikifier.parse(
+                        inputs[i].name+'.push("'+inputs[i].value.replace(/"/g,'\\"')+'")'));
+                }
+            }
+        }
+    },
+    handler: function (A, C, D, parser) {
+        var link,
+            match = new RegExp(Wikifier.linkFormatter.lookahead).exec(parser.fullMatch());
+        
+        if (match) {
+            Wikifier.linkFormatter.makeLink(A, match, this.callback, 'button');
+        }
+        else {
+            Wikifier.linkFormatter.makeLink(A,[0,D[1] || D[0], D[0]], this.callback, 'button');
+        }
+    }
+};
+
+function Passage(c, b, a, ofunc, okey) {
+    var t;
+    if (!this || this.constructor != Passage) {
+        throw new ReferenceError("passage() must be in lowercase");
+    }
+    this.title = c;
+    ofunc = typeof ofunc == 'function' && okey != null && ofunc;
+    if (b) {
+        this.id = a;
+        // Load tags
+        this.tags = b.getAttribute("tags");
+        if (typeof this.tags == "string") {
+            if (ofunc) {
+                this.tags = ofunc(this.tags, okey);
+            }
+            this.tags = this.tags.readBracketedList();
+        } else this.tags = [];
+        // Load text
+        t = b.firstChild ? b.firstChild.nodeValue : "";
+        if (ofunc && !this.isImage()) {
+            this.text = ofunc(Passage.unescapeLineBreaks(t), okey);
+        } else {
+            this.text = Passage.unescapeLineBreaks(t);
+        }
+        // Preload linked images
+        if (!this.isImage()) {
+            this.preloadImages();
+        }
+    } else {
+        this.text = '@@This passage does not exist: ' + c + '@@';
+        this.tags = [];
+    }
+}
+Passage.prototype.isImage = function() {
+    return !!~(this.tags.indexOf("Twine.image"));
+}
+Passage.prototype.preloadImages = function() {
+    var u = "\\s*['\"]?([^\"']+\.(jpe?g|a?png|gif|bmp|webp|svg))['\"]?\\s*",
+        k = function(c, e) {
+            var i,d;
+            do {
+                d = c.exec(this.text);
+                if(d) {
+                    i = new Image();
+                    i.src = d[e];
+                }
+            } while (d);
+            return k;
+        };
+    k.call(this, new RegExp(Wikifier.imageFormatter.lookahead.replace("[^\\[\\]\\|]+",u), "mg"), 4)
+        .call(this, new RegExp("url\\s*\\(" + u + "\\)", "mig"), 1)
+        .call(this, new RegExp("src\\s*=" + u, "mig"), 1);
+};
+
+Passage.unescapeLineBreaks = function (a) {
+    if (a && typeof a == "string") {
+        return a.replace(/\\n/mg, "\n").replace(/\\t/mg, "\t").replace(/\\s/mg, "\\").replace(/\\/mg, "\\").replace(/\r/mg, "")
+    } else {
+        return ""
+    }
+};
+Passage.prototype.setTags = function(b) {
+    var t = this.tags != null && this.tags.length ? this.tags.join(' ') : "";
+    if (t) {
+        b.setAttribute('data-tags', this.tags.join(' '));
+    }
+    document.body.setAttribute("data-tags", t);
+};
+Passage.prototype.processText = function() {
+    var ret = this.text;
+    if (~this.tags.indexOf("nobr")) {
+        ret = ret.replace(/\n/g,"\u200c");
+    }
+    if (this.isImage()) {
+        ret = "[img[" + ret + "]]"
+    }
+    return ret;
+};
+    
+function Tale() {
+    var a,b,c,lines,i,kv,ns,nsc,isImage,
+        settings = this.storysettings = {
+            lookup: function(a) {
+                return !~["0", "off", "false"].indexOf((this[a]+""));
+            }
+        },
+        tiddlerTitle = '';
+    window.tale = this;
+    function deswap(t, k) {
+        var i,c,p,p1,up,r = '';
+        for (i = 0; i < t.length; i++) {
+            c = t.charAt(i);
+            up = (c == c.toUpperCase());
+            p = k.indexOf(c.toLowerCase());
+            if (p > -1) {
+                p1 = p + (p % 2 == 0 ? 1 : -1);
+                if (p1 >= k.length) p1 = p;
+                c = k.charAt(p1);
+                up && (c = c.toUpperCase());
+            }
+            r = r + c;
+        }
+        return r
+    }
+    this.passages = {};
+    //Look for and load the StorySettings
+    if (document.normalize) document.normalize();
+    a = document.getElementById("storeArea").children;
+    for (b = 0; b < a.length; b++) {
+        c = a[b];
+        if (c.getAttribute && c.getAttribute("tiddler") == 'StorySettings') {
+            lines = new Passage('StorySettings', c, 0, null, null).text.split('\n');
+            for (i in lines) {
+                if (typeof lines[i] == "string" && lines[i].indexOf(':') > -1) {
+                    kv = lines[i].toLowerCase().split(':');
+                    kv[0] = kv[0].replace(/^\s+|\s+$/g, '');
+                    kv[1] = kv[1].replace(/^\s+|\s+$/g, '');
+                    if (kv[0] != "lookup") {
+                        settings[kv[0]] = kv[1];
+                    }
+                }
+            }
+        }
+    }
+    //Load in the passages
+    if (settings.obfuscate == 'swap' && settings.obfuscatekey) {
+        ns = '';
+        for (i = 0; i < settings.obfuscatekey.length; i++) {
+            nsc = settings.obfuscatekey[i];
+            if (ns.indexOf(nsc) == -1 && ":\\\"n0".indexOf(nsc) == -1) ns = ns + nsc;
+        }
+        settings.obfuscatekey = ns;
+        for (b = 0; b < a.length; b++) {
+            c = a[b];
+            if (c.getAttribute && (tiddlerTitle = c.getAttribute("tiddler"))) {
+                isImage = (c.getAttribute("tags")+"").indexOf("Twine.image")>-1;
+                if (tiddlerTitle != 'StorySettings' && !isImage) 
+                    tiddlerTitle = deswap(tiddlerTitle, settings.obfuscatekey);
+                this.passages[tiddlerTitle] = new Passage(tiddlerTitle, c, b+1, !isImage && deswap, settings.obfuscatekey);
+            }
+        }
+    } else {
+        for (b = 0; b < a.length; b++) {
+            c = a[b];
+            if (c.getAttribute && (tiddlerTitle = c.getAttribute("tiddler"))) {
+                this.passages[tiddlerTitle] = new Passage(tiddlerTitle, c, b, null, null)
+            }
+        }
+    }
+}
+Tale.prototype.has = function (a) {
+    if (typeof a == "string") {
+        return (this.passages[a] != null)
+    } else {
+        for (var i in this.passages) {
+            if (this.passages[i].id == a) {
+                return true
+            }
+        }
+        return false
+    }
+};
+Tale.prototype.get = function (a) {
+    if (typeof a == "string") {
+        return this.passages[a] || new Passage(a)
+    } else {
+        for (var i in this.passages) {
+            if (this.passages[i].id == a) {
+                return this.passages[i]
+            }
+        }
+    }
+};
+Tale.prototype.lookup = function (h, g, a) {
+    var d = [];
+    for (var c in this.passages) {
+        var f = this.passages[c];
+        for (var b = 0; b < f[h].length; b++) {
+            if (f[h][b] == g) {
+                d.push(f)
+            }
+        }
+    }
+    if (!a) {
+        a = "title"
+    }
+    d.sort(function (k, j) {
+        if (k[a] == j[a]) {
+            return (0)
+        } else {
+            return (k[a] < j[a]) ? -1 : +1
+        }
+    });
+    return d
+};
+Tale.prototype.canUndo = function() {
+    return this.storysettings.lookup('undo');
+};
+Tale.prototype.identity = function() {
+    return this.storysettings.identity || "game";
+};
+Tale.prototype.forEachStylesheet = function(tags, callback) {
+    var passage, i
+    tags = tags || [];
+    
+    if (typeof callback != "function")
+        return;
+    for (passage in this.passages) {
+        passage = tale.passages[passage];
+        if (passage && ~passage.tags.indexOf("stylesheet")) {
+            for (i = 0; i < tags.length; i++) {
+                if (~passage.tags.indexOf(tags[i])) {
+                    callback(passage);
+                    break;
+                }
+            }
+        }
+    }
+};
+Tale.prototype.setPageElements = function() {
+    var storyTitle, defaultTitle = "Untitled Story";
+    
+    setPageElement("storyTitle", "StoryTitle", defaultTitle);
+    storyTitle = document.getElementById("storyTitle");
+    document.title = this.title = (storyTitle && (storyTitle.textContent || storyTitle.innerText)) || defaultTitle;
+    
+    setPageElement("storySubtitle", "StorySubtitle", "");
+    if (tale.has("StoryAuthor")) {
+        setPageElement("titleSeparator", null, "\n");
+        setPageElement("storyAuthor", "StoryAuthor", "");
+    }
+    if (tale.has("StoryMenu")) {
+        document.getElementById("storyMenu").setAttribute("style","");
+        setPageElement("storyMenu", "StoryMenu", "");
+    }
+};
+
+function Wikifier(place, source) {
+    this.source = source;
+    this.output = place;
+    this.nextMatch = 0;
+    this.assembleFormatterMatches(Wikifier.formatters);
+    this.subWikify(this.output);
+}
+
+Wikifier.prototype.assembleFormatterMatches = function (formatters) {
+    this.formatters = [];
+    var pattern = [];
+
+    for (var n = 0; n < formatters.length; n++) {
+        pattern.push("(" + formatters[n].match + ")");
+        this.formatters.push(formatters[n]);
+    };
+
+    this.formatterRegExp = new RegExp(pattern.join("|"), "mg");
+};
+
+Wikifier.prototype.subWikify = function (output, terminator) {
+    // Temporarily replace the output pointer
+    var terminatorMatch, formatterMatch, oldOutput = this.output;
+    this.output = output;
+
+    // Prepare the terminator RegExp
+    var terminatorRegExp = terminator ? new RegExp("(" + terminator + ")", "mg") : null;
+    do {
+        // Prepare the RegExp match positions
+        this.formatterRegExp.lastIndex = this.nextMatch;
+
+        if (terminatorRegExp) terminatorRegExp.lastIndex = this.nextMatch;
+
+        // Get the first matches
+        formatterMatch = this.formatterRegExp.exec(this.source);
+        terminatorMatch = terminatorRegExp ? terminatorRegExp.exec(this.source) : null;
+
+        // Check for a terminator match
+        if (terminatorMatch && (!formatterMatch || terminatorMatch.index <= formatterMatch.index)) {
+            // Output any text before the match
+            if (terminatorMatch.index > this.nextMatch) this.outputText(this.output, this.nextMatch, terminatorMatch.index);
+
+            // Set the match parameters
+            this.matchStart = terminatorMatch.index;
+            this.matchLength = terminatorMatch[1].length;
+            this.matchText = terminatorMatch[1];
+            this.nextMatch = terminatorMatch.index + terminatorMatch[1].length;
+
+            // Restore the output pointer and exit
+            this.output = oldOutput;
+            return;
+        }
+        // Check for a formatter match
+        else if (formatterMatch) {
+            // Output any text before the match
+            if (formatterMatch.index > this.nextMatch) this.outputText(this.output, this.nextMatch, formatterMatch.index);
+
+            // Set the match parameters
+            this.matchStart = formatterMatch.index;
+            this.matchLength = formatterMatch[0].length;
+            this.matchText = formatterMatch[0];
+            this.nextMatch = this.formatterRegExp.lastIndex;
+
+            // Figure out which formatter matched
+            var matchingFormatter = -1;
+            for (var t = 1; t < formatterMatch.length; t++) {
+                if (formatterMatch[t]) {
+                    matchingFormatter = t - 1;
+                    break;
+                }
+            }
+
+            // Call the formatter
+            if (matchingFormatter != -1) { this.formatters[matchingFormatter].handler(this); }
+        }
+    }
+    while (terminatorMatch || formatterMatch);
+
+    // Output any text after the last match
+    if (this.nextMatch < this.source.length) {
+        this.outputText(this.output, this.nextMatch, this.source.length);
+        this.nextMatch = this.source.length;
+    }
+
+    // Restore the output pointer
+    this.output = oldOutput;
+};
+
+Wikifier.prototype.outputText = function (place, startPos, endPos) {
+    insertText(place, this.source.substring(startPos, endPos));
+};
+
+Wikifier.prototype.fullMatch = function() {
+    return this.source.slice(this.matchStart, this.source.indexOf('>>', this.matchStart)+2);
+};
+
+Wikifier.prototype.fullArgs = function (includeName) {
+    var source = this.source.replace(/\u200c/g," "),
+        endPos = source.indexOf('>>', this.matchStart),
+        startPos = source.indexOf(includeName ? '<<' : ' ', this.matchStart);
+    if (!~startPos || !~endPos || endPos <= startPos) {
+        return "";
+    }
+    return Wikifier.parse(source.slice(startPos + (includeName ? 2 : 1), endPos).trim());
+};
+
+Wikifier.parse = function (input) {
+    var m, re, b = input, found = [],
+        g = "(?=(?:[^\"'\\\\]*(?:\\\\.|'(?:[^'\\\\]*\\\\.)*[^'\\\\]*'|\"(?:[^\"\\\\]*\\\\.)*[^\"\\\\]*\"))*[^'\"]*$)";
+    
+    function alter(from,to) {
+        return b.replace(new RegExp(from+g,"gi"),to);
+    }
+    // Extract all the variables, and set them to 0 if undefined.
+    re = new RegExp(Wikifier.textPrimitives.variable,"gi");
+    while (m = re.exec(input)) {
+        if (!~found.indexOf(m[0])) {
+            // This deliberately contains a 'null or undefined' check
+            b = m[0]+" == null && ("+m[0]+" = 0);"+b;
+            found.push(m[0]);
+        }
+    }
+    b = alter(Wikifier.textPrimitives.variable, "state.history[0].variables.$1");
+    // Old operators
+    b = alter("\\beq\\b", " == ");
+    b = alter("\\bneq\\b", " != ");
+    b = alter("\\bgt\\b", " > ");
+    b = alter("\\bgte\\b", " >= ");
+    b = alter("\\blt\\b", " < ");
+    b = alter("\\blte\\b", " <= ");
+    b = alter("\\band\\b", " && ");
+    b = alter("\\bor\\b", " || ");
+    b = alter("\\bnot\\b", " ! ");
+    // New operators
+    b = alter("\\bis\\b", " == ");
+    b = alter("\\bto\\b", " = ");
+    return b
+};
+Wikifier.formatHelpers = {
+    charFormatHelper: function (a) {
+        var b = insertElement(a.output, this.element);
+        a.subWikify(b, this.terminator)
+    },
+    inlineCssHelper: function (w) {
+        var s, v, lookaheadMatch, gotMatch,
+            styles = [],
+            lookahead = "(?:(" + Wikifier.textPrimitives.anyLetter + "+)\\(([^\\)\\|\\n]+)(?:\\):))|(?:(" + Wikifier.textPrimitives.anyLetter + "+):([^;\\|\\n]+);)",
+            lookaheadRegExp = new RegExp(lookahead, "mg"),
+            hadStyle = false;
+        do {
+            lookaheadRegExp.lastIndex = w.nextMatch;
+            lookaheadMatch = lookaheadRegExp.exec(w.source);
+            gotMatch = lookaheadMatch && lookaheadMatch.index == w.nextMatch;
+            if (gotMatch) {
+                hadStyle = true;
+                if (lookaheadMatch[1]) {
+                    s = lookaheadMatch[1].unDash();
+                    v = lookaheadMatch[2];
+                } else {
+                    s = lookaheadMatch[3].unDash();
+                    v = lookaheadMatch[4];
+                }
+                switch (s) {
+                case "bgcolor":
+                    s = "backgroundColor";
+                    break;
+                case "float":
+                    s = "cssFloat";
+                    break
+                }
+                styles.push({
+                    style: s,
+                    value: v
+                });
+                w.nextMatch = lookaheadMatch.index + lookaheadMatch[0].length;
+            }
+        } while (gotMatch);
+        return styles;
+    },
+    monospacedByLineHelper: function (w) {
+        var lookaheadRegExp = new RegExp(this.lookahead, "mg");
+        lookaheadRegExp.lastIndex = w.matchStart;
+        var lookaheadMatch = lookaheadRegExp.exec(w.source);
+        if (lookaheadMatch && lookaheadMatch.index == w.matchStart) {
+            var text = lookaheadMatch[1];
+
+            // IE specific hack
+            if (navigator.userAgent.indexOf("msie") != -1 && navigator.userAgent.indexOf("opera") == -1) text = text.replace(/\n/g, "\r");
+            var e = insertElement(w.output, "pre", null, null, text);
+            w.nextMatch = lookaheadMatch.index + lookaheadMatch[0].length;
+        }
+    }
+};
+Wikifier.formatters = [
+{
+    name: "table",
+    match: "^\\|(?:[^\\n]*)\\|(?:[fhc]?)$",
+    lookahead: "^\\|([^\\n]*)\\|([fhc]?)$",
+    rowTerminator: "\\|(?:[fhc]?)$\\n?",
+    cellPattern: "(?:\\|([^\\n\\|]*)\\|)|(\\|[fhc]?$\\n?)",
+    cellTerminator: "(?:\\x20*)\\|",
+    rowTypes: {
+        "c": "caption",
+        "h": "thead",
+        "": "tbody",
+        "f": "tfoot"
+    },
+    handler: function (w) {
+        var rowContainer, rowElement,lookaheadMatch, matched,
+            table = insertElement(w.output, "table"),
+            lookaheadRegExp = new RegExp(this.lookahead, "mg"),
+            currRowType = null,
+            nextRowType,
+            prevColumns = [],
+            rowCount = 0;
+        w.nextMatch = w.matchStart;
+        do {
+            lookaheadRegExp.lastIndex = w.nextMatch;
+            lookaheadMatch = lookaheadRegExp.exec(w.source),
+            matched = lookaheadMatch && lookaheadMatch.index == w.nextMatch;
+            if (matched) {
+                nextRowType = lookaheadMatch[2];
+                if (nextRowType != currRowType) rowContainer = insertElement(table, this.rowTypes[nextRowType]);
+                currRowType = nextRowType;
+                if (currRowType == "c") {
+                    if (rowCount == 0) rowContainer.setAttribute("align", "top");
+                    else rowContainer.setAttribute("align", "bottom");
+                    w.nextMatch = w.nextMatch + 1;
+                    w.subWikify(rowContainer, this.rowTerminator);
+                } else {
+                    rowElement = insertElement(rowContainer, "tr");
+                    this.rowHandler(w, rowElement, prevColumns);
+                }
+                rowCount++;
+            }
+        } while (matched);
+    },
+    rowHandler: function (w, e, prevColumns) {
+        var cellMatch, matched, col = 0,
+        currColCount = 1,
+        cellRegExp = new RegExp(this.cellPattern, "mg");
+        
+        do {
+            cellRegExp.lastIndex = w.nextMatch;
+            cellMatch = cellRegExp.exec(w.source);
+            matched = cellMatch && cellMatch.index == w.nextMatch;
+            if (matched) {
+                if (cellMatch[1] == "~") {
+                    var last = prevColumns[col];
+                    if (last) {
+                        last.rowCount++;
+                        last.element.setAttribute("rowSpan", last.rowCount);
+                        last.element.setAttribute("rowspan", last.rowCount);
+                        last.element.valign = "center";
+                    }
+                    w.nextMatch = cellMatch.index + cellMatch[0].length - 1;
+                } else if (cellMatch[1] == ">") {
+                    currColCount++;
+                    w.nextMatch = cellMatch.index + cellMatch[0].length - 1;
+                } else if (cellMatch[2]) {
+                    w.nextMatch = cellMatch.index + cellMatch[0].length;
+                    break;
+                } else {
+                    var spaceLeft = false,
+                        spaceRight = false,
+                        lastColCount, lastColElement, styles, cell, t;
+                    w.nextMatch++;
+                    styles = Wikifier.formatHelpers.inlineCssHelper(w);
+                    while (w.source.substr(w.nextMatch, 1) == " ") {
+                        spaceLeft = true;
+                        w.nextMatch++;
+                    }
+                    if (w.source.substr(w.nextMatch, 1) == "!") {
+                        cell = insertElement(e, "th");
+                        w.nextMatch++;
+                    } else cell = insertElement(e, "td");
+                    prevColumns[col] = {
+                        rowCount: 1,
+                        element: cell
+                    };
+                    lastColCount = 1;
+                    lastColElement = cell;
+                    if (currColCount > 1) {
+                        cell.setAttribute("colSpan", currColCount);
+                        cell.setAttribute("colspan", currColCount);
+                        currColCount = 1;
+                    }
+                    for (t = 0; t < styles.length; t++)
+                    cell.style[styles[t].style] = styles[t].value;
+                    w.subWikify(cell, this.cellTerminator);
+                    if (w.matchText.substr(w.matchText.length - 2, 1) == " ") spaceRight = true;
+                    if (spaceLeft && spaceRight) cell.align = "center";
+                    else if (spaceLeft) cell.align = "right";
+                    else if (spaceRight) cell.align = "left";
+                    w.nextMatch = w.nextMatch - 1;
+                }
+                col++;
+            }
+        } while (matched);
+    }
+},
+{
+    name: "rule",
+    match: "^----$\\n?",
+    handler: function (w) {
+        insertElement(w.output, "hr");
+    }
+},
+{
+    name: "emdash",
+    match: "--",
+    becomes: String.fromCharCode(8212),
+    handler: function (a) {
+        insertElement(a.output, "span", null, "char", this.becomes).setAttribute("data-char","emdash");
+    }
+},
+{
+    name: "heading",
+    match: "^!{1,5}",
+    terminator: "\\n",
+    handler: function (w) {
+        var e = insertElement(w.output, "h" + w.matchLength);
+        w.subWikify(e, this.terminator);
+    }
+},
+{
+    name: "monospacedByLine",
+    match: "^\\{\\{\\{\\n",
+    lookahead: "^\\{\\{\\{\\n((?:^[^\\n]*\\n)+?)(^\\}\\}\\}$\\n?)",
+    handler: Wikifier.formatHelpers.monospacedByLineHelper
+},
+{
+    name: "quoteByBlock",
+    match: "^<<<\\n",
+    terminator: "^<<<\\n",
+    handler: function (w) {
+        var e = insertElement(w.output, "blockquote");
+        w.subWikify(e, this.terminator);
+    }
+},
+{
+    name: "list",
+    match: "^(?:(?:[>\\*=]+)|(?:#+))",
+    lookahead: "^(?:([>\\*=]+)|(#+))",
+    terminator: "\\n",
+    handler: function (w) {
+        var newType, newLevel, t, len, bulletType, lookaheadMatch, matched,
+            lookaheadRegExp = new RegExp(this.lookahead, "mg"),
+            placeStack = [w.output],
+            currType = null,
+            currLevel = 0;
+            
+        w.nextMatch = w.matchStart;
+        do {
+            lookaheadRegExp.lastIndex = w.nextMatch;
+            lookaheadMatch = lookaheadRegExp.exec(w.source);
+            matched = lookaheadMatch && lookaheadMatch.index == w.nextMatch;
+            if (matched) {
+                newLevel = lookaheadMatch[0].length;
+                // Non-conventional bullet points
+                if (lookaheadMatch[1]) {
+                    if (lookaheadMatch[1].slice(-2) == "->") {
+                        bulletType = '\u2192';
+                        newLevel--;
+                    }
+                    else if (lookaheadMatch[1].slice(-2) == "=>") {
+                        bulletType = '\u21d2';
+                        newLevel--;
+                    }
+                    else bulletType = lookaheadMatch[1].slice(-1);
+                    newType = "ul";
+                }
+                else if (lookaheadMatch[2]) {
+                    newType = "ol";
+                }
+                w.nextMatch += newLevel;
+                if (newLevel > currLevel) {
+                    for (t = currLevel; t < newLevel; t++) {
+                        placeStack.push(insertElement(placeStack[placeStack.length - 1], newType));
+                    }
+                } else if (newLevel < currLevel) {
+                    for (t = currLevel; t > newLevel; t--)
+                        placeStack.pop();
+                } else if (newLevel == currLevel && newType != currType) {
+                    placeStack.pop();
+                    placeStack.push(insertElement(placeStack[placeStack.length - 1], newType));
+                }
+                currLevel = newLevel;
+                currType = newType;
+                t = insertElement(placeStack[placeStack.length - 1], "li");
+                if (bulletType != "*" && bulletType != "#") {
+                    t.setAttribute("data-bullet", bulletType);
+                }
+                w.subWikify(t, this.terminator);
+            }
+        } while (matched);
+    }
+},
+(Wikifier.urlFormatter = {
+    name: "urlLink",
+    match: "(?:http|https|mailto|javascript|ftp|data):[^\\s'\"]+(?:/|\\b)",
+    handler: function (w) {
+        var e = Wikifier.createExternalLink(w.output, w.matchText);
+        w.outputText(e, w.matchStart, w.nextMatch);
+    }
+}),
+(Wikifier.linkFormatter = {
+    name: "prettyLink",
+    match: "\\[\\[",
+    lookahead: "\\[\\[([^\\|\\]]*?)(?:\\|(.*?))?\\](?:\\[(.*?)\])?\\]",
+    makeInternalOrExternal: function(out,title,callback,type) {
+        if (title && !tale.has(title) && (title.match(Wikifier.urlFormatter.match,"g") || ~title.search(/[\.\\\/#]/)))
+            return Wikifier.createExternalLink(out, title, callback, type); 
+        else
+            return Wikifier.createInternalLink(out, title, callback, type);
+    },
+    // This base callback executes the code in a setter 
+    makeCallback: function(out,code,callback) {
+        return function() {
+            macros.set.run(out, Wikifier.parse(code)); 
+            typeof callback == "function" && callback.call(this);
+        }
+    },
+    makeLink: function(out, match, callback2, type) {
+        var link, title, callback;
+        if (match[3]) { // Code
+            callback = this.makeCallback(out,match[3],callback2);
+        }
+        else {
+            typeof callback2 == "function" && (callback = callback2);
+        }
+        title = Wikifier.parsePassageTitle(match[2] || match[1]);
+        link = this.makeInternalOrExternal(out,title,callback, type);
+        setPageElement(link, null, match[2] ? match[1] : title);
+        return link;
+    },
+    handler: function (w) {
+        var lookaheadRegExp = new RegExp(this.lookahead, "mg");
+        lookaheadRegExp.lastIndex = w.matchStart;
+        var lookaheadMatch = lookaheadRegExp.exec(w.source)
+        if (lookaheadMatch && lookaheadMatch.index == w.matchStart) {
+            this.makeLink(w.output, lookaheadMatch)
+            w.nextMatch = lookaheadMatch.index + lookaheadMatch[0].length;
+        }
+    }
+}),
+(Wikifier.imageFormatter = {
+    name: "image",
+    match: "\\[(?:[<]{0,1})(?:[>]{0,1})[Ii][Mm][Gg]\\[",
+    lookahead: "\\[([<]?)(>?)img\\[(?:([^\\|\\]]+)\\|)?([^\\[\\]\\|]+)\\](?:\\[([^\\]]*)\\]?)?(\\])",
+    handler: function (w) {
+        var lookaheadRegExp = new RegExp(this.lookahead, "mig");
+        lookaheadRegExp.lastIndex = w.matchStart;
+        var lookaheadMatch = lookaheadRegExp.exec(w.source);
+        if (lookaheadMatch && lookaheadMatch.index == w.matchStart) // Simple bracketed link
+        {
+            var e = w.output, title = Wikifier.parsePassageTitle(lookaheadMatch[5])
+            if (title) {
+                e = Wikifier.linkFormatter.makeInternalOrExternal(w.output, title);
+            }
+            var img = insertElement(e, "img");
+            if (lookaheadMatch[1]) img.align = "left";
+            else if (lookaheadMatch[2]) img.align = "right";
+            if (lookaheadMatch[3]) img.title = lookaheadMatch[3];
+            img.src = lookaheadMatch[4];
+            // Base64 passage transclusion
+            var imgPassages = tale.lookup("tags", "Twine.image");
+            for (var j = 0; j < imgPassages.length; j++) {
+                if (imgPassages[j].title == lookaheadMatch[4]) {
+                    img.src = imgPassages[j].text;
+                    break;
+                }
+            }
+            w.nextMatch = lookaheadMatch.index + lookaheadMatch[0].length;
+        }
+    }
+}),
+{
+    name: "macro",
+    match: "<<",
+    lookahead: "<<([^>\\s]+)(?:\\s*)((?:[^>]|>(?!>))*)>>",
+    handler: function (w) {
+        var lookaheadRegExp = new RegExp(this.lookahead, "mg");
+        lookaheadRegExp.lastIndex = w.matchStart;
+        var lookaheadMatch = lookaheadRegExp.exec(w.source.replace(/\u200c/g,'\n'));
+        if (lookaheadMatch && lookaheadMatch.index == w.matchStart && lookaheadMatch[1]) {
+            var params = lookaheadMatch[2].readMacroParams();
+            w.nextMatch = lookaheadMatch.index + lookaheadMatch[0].length;
+            var name = lookaheadMatch[1];
+            try {
+                var macro = macros[name];
+                if (macro && macro.handler) {
+                    macro.handler(w.output, name, params, w);
+                }
+                // Variable?
+                else if (name[0] == '$') {
+                    macros.print.handler(w.output, name, [name].concat(params), w);
+                }
+                // Passage
+                else if (tale.has(name)) {
+                    macros.display.handler(w.output, name, [name].concat(params), w);
+                }
+                else throwError(w.output, 'Macro not found: ' + name, w.fullMatch());
+            } catch (e) {
+                throwError(w.output, 'Error executing macro ' + name + ': ' + e.toString(), w.fullMatch());
+            }
+        }
+    }
+},
+{
+    name: "html",
+    match: "<html>",
+    lookahead: "<html>((?:.|\\n)*?)</html>",
+    handler: function (w) {
+        var lookaheadRegExp = new RegExp(this.lookahead, "mg");
+        lookaheadRegExp.lastIndex = w.matchStart;
+        var lookaheadMatch = lookaheadRegExp.exec(w.source)
+        if (lookaheadMatch && lookaheadMatch.index == w.matchStart) {
+            var e = insertElement(w.output, "span");
+            e.innerHTML = lookaheadMatch[1];
+            w.nextMatch = lookaheadMatch.index + lookaheadMatch[0].length;
+        }
+    }
+},
+{
+    name: "commentByBlock",
+    match: "/%",
+    lookahead: "/%((?:.|\\n)*?)%/",
+    handler: function (w) {
+        var lookaheadRegExp = new RegExp(this.lookahead, "mg");
+        lookaheadRegExp.lastIndex = w.matchStart;
+        var lookaheadMatch = lookaheadRegExp.exec(w.source)
+        if (lookaheadMatch && lookaheadMatch.index == w.matchStart) w.nextMatch = lookaheadMatch.index + lookaheadMatch[0].length;
+    }
+},
+{
+    name: "boldByChar",
+    match: "''",
+    terminator: "''",
+    element: "strong",
+    handler: Wikifier.formatHelpers.charFormatHelper
+},
+{
+    name: "strikeByChar",
+    match: "==",
+    terminator: "==",
+    element: "strike",
+    handler: Wikifier.formatHelpers.charFormatHelper
+},
+{
+    name: "underlineByChar",
+    match: "__",
+    terminator: "__",
+    element: "u",
+    handler: Wikifier.formatHelpers.charFormatHelper
+},
+{
+    name: "italicByChar",
+    match: "//",
+    terminator: "//",
+    element: "em",
+    handler: Wikifier.formatHelpers.charFormatHelper
+},
+{
+    name: "subscriptByChar",
+    match: "~~",
+    terminator: "~~",
+    element: "sub",
+    handler: Wikifier.formatHelpers.charFormatHelper
+},
+{
+    name: "superscriptByChar",
+    match: "\\^\\^",
+    terminator: "\\^\\^",
+    element: "sup",
+    handler: Wikifier.formatHelpers.charFormatHelper
+},
+{
+    name: "monospacedByChar",
+    match: "\\{\\{\\{",
+    lookahead: "\\{\\{\\{((?:.|\\n)*?)\\}\\}\\}",
+    handler: function (w) {
+        var lookaheadRegExp = new RegExp(this.lookahead, "mg");
+        lookaheadRegExp.lastIndex = w.matchStart;
+        var lookaheadMatch = lookaheadRegExp.exec(w.source)
+        if (lookaheadMatch && lookaheadMatch.index == w.matchStart) {
+            var e = insertElement(w.output, "code", null, null, lookaheadMatch[1]);
+            w.nextMatch = lookaheadMatch.index + lookaheadMatch[0].length;
+        }
+    }
+},
+{
+    name: "styleByChar",
+    match: "@@",
+    terminator: "@@",
+    lookahead: "(?:([^\\(@]+)\\(([^\\)]+)(?:\\):))|(?:([^:@]+):([^;]+);)",
+    handler: function (w) {
+        var e = insertElement(w.output, "span", null, null, null);
+        var styles = Wikifier.formatHelpers.inlineCssHelper(w);
+        if (styles.length == 0)
+            e.className = "marked";
+        else for (var t = 0; t < styles.length; t++)
+            e.style[styles[t].style] = styles[t].value;
+        w.subWikify(e, this.terminator);
+    }
+},
+{
+    name: "continuedLine",
+    match: "\\\\\\s*?\\n",
+    handler: function(a) {
+        a.nextMatch = a.matchStart+2;
+    }
+},
+{
+    name: "htmltag",
+    match: "<\\w+(?:(?:\\s+\\w+(?:\\s*=\\s*(?:\".*?\"|'.*?'|[^'\">\\s]+))?)+\\s*|\\s*)\\/?>",
+    tagname: "<(\\w+)",
+    voids: ["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"],
+    tableElems: ["table","thead","tbody","tfoot","th","tr","td","colgroup","col","caption","figcaption"],
+    cleanupTables: function (e) {
+        var i, name, elems = [].slice.call(e.children);
+        // Remove non-table child elements that aren't children of <td>s
+        for (i = 0; i < elems.length; i++) {
+            if (elems[i].tagName) {
+                name = elems[i].tagName.toLowerCase();
+                if (this.tableElems.indexOf(name)==-1) {
+                    elems[i].outerHTML = '';
+                }
+                else if (['col','caption','figcaption','td','th'].indexOf(name)==-1) {
+                    this.cleanupTables.call(this,elems[i]);
+                }
+            }
+        }
+    },
+    handler: function (a) {
+        var e, isvoid, lookaheadRegExp, lookaheadMatch, lookahead,
+          re = new RegExp(this.tagname).exec(a.matchText),
+          tn = re && re[1];
+        if(tn && tn.toLowerCase() != "html") {
+            lookahead = "<\\/\\s*" + tn + "\\s*>";
+            isvoid = (this.voids.indexOf(tn.toLowerCase()) != -1);
+            lookaheadRegExp = new RegExp(lookahead, "mg");
+            lookaheadRegExp.lastIndex = a.matchStart;
+            lookaheadMatch = lookaheadRegExp.exec(a.source);
+            if (lookaheadMatch || isvoid) {
+                e = document.createElement(a.output.tagName);
+                e.innerHTML = a.matchText;
+                while(e.firstChild) {
+                    e = e.firstChild;
+                }
+                if (!isvoid) {
+                    a.subWikify(e, lookahead);
+                }
+                if (e.tagName.toLowerCase() == 'table') {
+                    this.cleanupTables.call(this,e);
+                }
+                a.output.appendChild(e);
+            } else {
+                throwError(a.output,"HTML tag '"+tn+"' wasn't closed.", a.matchText);
+            }
+        }
+    }
+},
+{
+    name: "char",
+    match: "[^\n]",
+    handler: function (a) {
+        // Line breaks do NOT get their own charspans
+        insertElement(a.output, "span", null, "char", a.matchText).setAttribute("data-char", a.matchText == " " ? "space" :
+            a.matchText == "\t" ? "tab" : a.matchText);
+    }
+}
+];
+Wikifier.parsePassageTitle = function(title) {
+    if (title && !tale.has(title)) {
+        try {
+            title = (eval(this.parse(title)) || title)+"";
+        }
+        catch(e) {}
+    }
+    return title;
+};
+
+Wikifier.linkFunction = function(title, el, callback) {
+    return function() {
+        if (state.rewindTo) {
+            var passage = findPassageParent(el);
+            if (passage && passage.parentNode.lastChild != passage) {
+                state.rewindTo(passage, true);
+            }
+        }
+        state.display(title, el, null, callback);
+    };
+};
+
+Wikifier.createInternalLink = function (place, title, callback, type) {
+    var tag = (type == "button" ? 'button' : 'a'),
+        suffix = (type == "button" ? "Button" : "Link"),
+        el = insertElement(place, tag);
+
+    if (tale.has(title)) {
+        el.className = 'internal'+suffix;
+        if (visited(title)) el.className += ' visited'+suffix;
+    }
+    else el.className = 'broken'+suffix;
+
+    el.onclick = Wikifier.linkFunction(title, el, callback);
+
+    if (place) place.appendChild(el);
+
+    return el;
+};
+
+Wikifier.createExternalLink = function (place, url, callback, type) {
+    var tag = (type == "button" ? 'button' : 'a'),
+        el = insertElement(place, tag);
+    el.href = url;
+    el.className = "external"+(type == "button" ? "Button" : "Link");
+    el.target = "_blank";
+    if (typeof callback == "function") el.onclick = callback;
+    
+    if (place) place.appendChild(el);
+
+    return el;
+};
+if (!((new RegExp("[\u0150\u0170]", "g")).test("\u0150"))) {
+    Wikifier.textPrimitives = {
+        upperLetter: "[A-Z\u00c0-\u00de]",
+        lowerLetter: "[a-z\u00df-\u00ff_0-9\\-]",
+        anyLetter: "[A-Za-z\u00c0-\u00de\u00df-\u00ff_0-9\\-]"
+    }
+} else {
+    Wikifier.textPrimitives = {
+        upperLetter: "[A-Z\u00c0-\u00de\u0150\u0170]",
+        lowerLetter: "[a-z\u00df-\u00ff_0-9\\-\u0151\u0171]",
+        anyLetter: "[A-Za-z\u00c0-\u00de\u00df-\u00ff_0-9\\-\u0150\u0170\u0151\u0171]"
+    }
+};
+Wikifier.textPrimitives.variable = "\\$((?:"+Wikifier.textPrimitives.anyLetter.replace("\\-", "")+"*"+
+    Wikifier.textPrimitives.anyLetter.replace("0-9\\-", "")+"+"+
+    Wikifier.textPrimitives.anyLetter.replace("\\-", "")+"*)+)";
+
+// Functions usable by custom scripts
+// This includes restart(), above.
+function visited(e) {
+    var ret = 0, i = 0;
+    if (!state) {
+        return 0;
+    }
+    e = e || state.history[0].passage.title;
+    if (arguments.length > 1) {
+        for (ret = state.history.length; i<arguments.length; i++) {
+            ret = Math.min(ret, visited(arguments[i]));
+        }
+    }
+    else for(; i<state.history.length && state.history[i].passage; i++) {
+        if(e == state.history[i].passage.title) {
+            ret++;
+        }
+    }
+    return ret;
+}
+
+function visitedTag() {
+    var i, j, k, ret = 0;
+    if (!state) {
+        return 0;
+    }
+    for(i = 0; i<state.history.length && state.history[i].passage; i++) {
+        for(j = 0; j<state.history.length && state.history[i].passage; i++) {
+            for (k = 0; k < arguments.length || void ret++; k++) {
+                if(state.history[i].passage.tags.indexOf(arguments[k])==-1) {
+                    break;
+                }
+            }
+        }
+    }
+    return ret;
+}
+
+function turns() {
+    return state.history.length-1;
+}
+
+function passage() {
+    return state.history[0].passage.title
+}
+
+function tags(e) {
+    var ret = [], i = 0;
+    if (!state) {
+        return 0;
+    }
+    e = e || state.history[0].passage.title;
+    if (arguments.length > 1) {
+        for (i = arguments.length-1; i >= 1; i--) {
+            ret = ret.concat(tags(arguments[i]));
+        }
+    }
+    ret = ret.concat(tale.get(e).tags);
+    return ret;
+}
+
+function previous() {
+    if (state && state.history[1]) {
+        for (var d = 1; d < state.history.length && state.history[d].passage; d++) {
+            if (state.history[d].passage.title != state.history[0].passage.title) {
+                return state.history[d].passage.title
+            }
+        }
+    }
+    return ""
+}
+
+function either() {
+    if (arguments[0] instanceof Array && arguments.length == 1) {
+        return either.apply(this,arguments[0]);
+    }
+    return arguments[~~(Math.random()*arguments.length)];
+}
+
+function parameter(n) {
+    n = n || 0;
+    if (macros.display.parameters[n]) {
+        return macros.display.parameters[n];
+    }
+    return 0
+}
+
+function scriptEval(s) {
+    try {
+        eval(s.text);
+    } catch (e) {
+        alert("There is a technical problem with this " + tale.identity() + " (" + s.title + ": " + e.message + ")."+softErrorMessage);
+    }
+}
+
+/* Error reporting */
+var softErrorMessage = " You may be able to continue playing, but some parts may not work properly.";
+window.onerror = function (msg, a, b, c, error) {
+    var s = (error && (".\n\n" + error.stack.replace(/\([^\)]+\)/g,'') + "\n\n")) || (" (" + msg + ").\n");
+    alert("Sorry to interrupt, but this " + ((tale && tale.identity && tale.identity()) || "page") + "'s code has got itself in a mess" + s + softErrorMessage.slice(1));
+    window.onerror = null;
+};
+
+/* Init function */
+var $;
+function main() {
+    // Used by old custom scripts.
+    // Cedes to jQuery if it exists.
+    $ = window.$ || function(a) {
+        return (typeof a == "string" ? document.getElementById(a) : a);
+    }
+    var imgs, scripts, macro, style, styleText = "", i, passages = document.getElementById("passages");
+    
+    function sanityCheck(thing) {
+        // Warn if display() was replaced improperly
+        if (!sanityCheck.display) {
+            if (History.prototype.display.length < 4 && !~History.prototype.display.toString().indexOf("arguments")) {
+                alert("NOTE: The " + thing + " contains a function that patches History.prototype.display, but takes the wrong number of arguments."+softErrorMessage);
+            }
+            sanityCheck.display = true;
+        }
+    }
+    
+    if (!window.JSON || !document.querySelector) {
+        return (passages.innerHTML = "This " + tale.identity() + " requires a newer web browser. Sorry.");
+    } else {
+        passages.innerHTML = "";
+    }
+    tale = window.tale = new Tale();
+    
+    if (~document.documentElement.className.indexOf("lt-ie9")) {
+        imgs = tale.lookup("tags", "Twine.image");
+        for (i = 0; i < imgs.length; i++) {
+            if (imgs[i].text.length >= 32768) {
+                alert("NOTE: This " + tale.identity() + "'s HTML file contains embedded images that may be too large for this browser to display."+softErrorMessage);
+                break;
+            }
+        }
+    }
+    scripts = tale.lookup("tags", "script");
+    for (i = 0; i < scripts.length; i++) {
+        scriptEval(scripts[i]);
+        sanityCheck('script passage "'+scripts[i].title+'"');
+    }
+    // Need to create state now, since it's used by remember.init()
+    state = window.state = new History();
+    for (i in macros) {
+        macro = macros[i];
+        if (typeof macro.init == "function") {
+            macro.init();
+            sanityCheck('init() of the custom macro "'+i+'"');
+        }
+    }
+
+    style = document.getElementById("storyCSS");
+    for (i in tale.passages) {
+        i = tale.passages[i];
+        if (i.tags + "" == "stylesheet") {
+            styleText += i.text;
+        }
+        else if (i.tags.length == 2 && i.tags.indexOf("transition") >-1 &&
+                i.tags.indexOf("stylesheet") >-1) {
+            setTransitionCSS(i.text);
+        }
+    }
+    styleText = alterCSS(styleText);
+    style.styleSheet ? (style.styleSheet.cssText = styleText) : (style.innerHTML = styleText);
+    
+    state.init();
+}
+
+
+/*
+**
+** Sugarcane/Responsive specific code follows
+**
+*/
+var hasPushState = !!window.history && (typeof window.history.pushState == "function") && (function(a) {
+    // iOS Safari: setItem throws in private mode
+    try {
+        a.setItem("test", '1');
+        a.removeItem("test");
+        return true;
+    } catch (e) {
+        return false;
+    }
+}(window.sessionStorage));
+
+Tale.prototype.canBookmark = function() {
+    return this.canUndo() && (this.storysettings.lookup('bookmark') || !hasPushState);
+};
+History.prototype.init = function () {
+    var a = this;
+    if (!this.restore()) {
+        if (tale.has("StoryInit")) {
+            new Wikifier(null, tale.get("StoryInit").text);
+        }
+        this.display("Start", null)
+    }
+    if (!hasPushState) {
+        this.hash = window.location.hash;
+        this.interval = window.setInterval(function () {
+            a.watchHash()
+        }, 250)
+    }
+};
+hasPushState && (History.prototype.pushState = function(replace, uri) {
+    window.history[replace ? "replaceState" : "pushState"]({ id: this.id, length: this.history.length }, document.title, uri);
+});
+History.prototype.display = function (title, source, type, callback) {
+    var e, bookmarkhref, c = tale.get(title), p = document.getElementById("passages");
+    if (c==null) {
+        return;
+    }
+    if (type != "back") {
+        this.saveVariables(c, source, callback);
+        if (hasPushState && tale.canUndo()) {
+            try {
+                sessionStorage.setItem("history"+this.id, JSON.stringify(this.history));
+                this.pushState(this.history.length <= 2 && window.history.state == "");
+            } catch(e) {
+                alert("Your browser couldn't save the state of the " + tale.identity() +".\n"+
+                    "You may continue playing, but it will no longer be possible to undo moves from here on in.");
+                tale.storysettings.undo="off";
+            }
+        }
+    }
+    bookmarkhref = this.save();
+    e = c.render();
+    if (type != "quietly") {
+        if (hasTransition) {
+            for(var i = 0; i < p.childNodes.length; i += 1) {
+                var q = p.childNodes[i];
+                q.classList.add("transition-out");
+                setTimeout((function(a) { return function () {
+                    if(a.parentNode) a.parentNode.removeChild(a);
+                }}(q)), 1000);
+            }
+            e.classList.add("transition-in");
+            setTimeout(function () { e.classList.remove("transition-in"); }, 1);
+            e.style.visibility = "visible";
+            p.appendChild(e);
+        } else {
+            removeChildren(p);
+            p.appendChild(e);
+            fade(e, {
+                fade: "in"
+            })
+        }
+    }
+    else {
+        p.appendChild(e);
+        e.style.visibility = "visible"
+    }
+    tale.setPageElements();
+    if (tale.canUndo()) {
+        if (!hasPushState && type != "back") {
+            this.hash = bookmarkhref;
+            window.location.hash = this.hash;
+        } else if (tale.canBookmark()) {
+            var bookmark = document.getElementById("bookmark");
+            bookmark && (bookmark.href = bookmarkhref);
+        }
+    }
+    window.scroll(0, 0)
+    return e
+};
+History.prototype.watchHash = function () {
+    if (window.location.hash != this.hash) {
+        if (window.location.hash && (window.location.hash != "#")) {
+            this.history = [{
+                passage: null,
+                variables: {}
+            }];
+            removeChildren(document.getElementById("passages"));
+            if (!this.restore()) {
+                alert("The passage you had previously visited could not be found.")
+            }
+        } else {
+            window.location.reload()
+        }
+        this.hash = window.location.hash
+    }
+};
+History.prototype.loadLinkVars = function() {
+    for (var c in this.history[0].linkVars) {
+        this.history[0].variables[c] = clone(this.history[0].linkVars[c]);
+    }
+};
+Passage.prototype.render = function () {
+    var b = insertElement(null, 'div', 'passage' + this.title, 'passage');
+    b.style.visibility = 'hidden';
+    this.setTags(b);
+    this.setCSS();
+    insertElement(b, 'div', '', 'header');
+    var a = insertElement(b, 'div', '', 'body content');
+    for (var i in prerender) {
+        (typeof prerender[i] == "function") && prerender[i].call(this,a);
+    }
+    new Wikifier(a, this.processText());
+    insertElement(b, 'div', '', 'footer');
+    for (i in postrender) {
+        (typeof postrender[i] == "function") && postrender[i].call(this,a);
+    }
+    return b;
+};
+Passage.prototype.excerpt = function () {
+    var b = this.text.replace(/<<.*?>>/g, "");
+    b = b.replace(/!.*?\n/g, "");
+    b = b.replace(/[\[\]\/]/g, "");
+    var a = b.split("\n");
+    while (a.length && a[0].length == 0) a.shift();
+    var c = '';
+    if (a.length == 0 || a[0].length == 0) c = this.title;
+    else c = a[0].substr(0, 30) + '...';
+    return c;
+};
+Passage.transitionCache = "";
+Passage.prototype.setCSS = function() {
+    var trans = false, text = "", tags = this.tags || [],
+        c = document.getElementById('tagCSS'),
+        c2 = document.getElementById('transitionCSS');
+    
+    if (c && c.getAttribute('data-tags') != tags.join(' ')) {
+        tale.forEachStylesheet(tags, function(passage) {
+            if (~passage.tags.indexOf("transition")) {
+                if (!Passage.transitionCache && c2)
+                    Passage.transitionCache = c2.innerHTML;
+                setTransitionCSS(passage.text);
+                trans = true;
+            }
+            else text += alterCSS(passage.text);
+        });
+        if (!trans && Passage.transitionCache && c2) {
+            setTransitionCSS(Passage.transitionCache);
+            trans = false;
+            Passage.transitionCache = "";
+        }
+        c.styleSheet ? (c.styleSheet.cssText = text) : (c.innerHTML = text);
+        c.setAttribute('data-tags', tags.join(' '));
+    }
+};
+
+var Interface = {
+    init: function () {
+        var snapback = document.getElementById("snapback"),
+            restart = document.getElementById("restart"),
+            bookmark = document.getElementById("bookmark");
+        main();
+        if (snapback) {
+            if (!tale.lookup("tags", "bookmark").length) {
+                snapback.parentNode.removeChild(snapback);
+            } else snapback.onclick = Interface.showSnapback;
+        }
+        if (bookmark && (!tale.canBookmark() || !hasPushState)) {
+            bookmark.parentNode.removeChild(bookmark);
+        }
+        restart && (restart.onclick = Interface.restart);
+    },
+    restart: function () {
+        if (confirm("Are you sure you want to restart this " + tale.identity() + "?")) {
+            state.restart()
+        }
+    },
+    showSnapback: function (a) {
+        Interface.hideAllMenus();
+        Interface.buildSnapback();
+        Interface.showMenu(a, document.getElementById("snapbackMenu"))
+    },
+    buildSnapback: function () {
+        var b, c = false,
+            menuelem = document.getElementById("snapbackMenu");
+        while (menuelem.hasChildNodes()) {
+            menuelem.removeChild(menuelem.firstChild)
+        }
+        for(var a = state.history.length - 1; a >= 0; a--) {
+            if(state.history[a].passage && state.history[a].passage.tags.indexOf("bookmark") != -1) {
+                b = document.createElement("div");
+                b.pos = a;
+                b.onclick = function () {
+                    var p = this.pos;
+                    var n = state.history[p].passage.title;
+                    while(p >= 0) {
+                        if (state.history.length>1) {
+                            state.history.shift();
+                        }
+                        p--;
+                    }
+                    state.display(n);
+                };
+                b.innerHTML = state.history[a].passage.excerpt();
+                menuelem.appendChild(b);
+                c = true
+            }
+        }
+        if(!c) {
+            b = document.createElement("div");
+            b.innerHTML = "<i>No passages available</i>";
+            document.getElementById("snapbackMenu").appendChild(b)
+        }
+    },
+    hideAllMenus: function () {
+        document.getElementById("snapbackMenu").style.display = "none"
+    },
+    showMenu: function (b, a) {
+        if (!b) {
+            b = window.event
+        }
+        var c = {
+            x: 0,
+            y: 0
+        };
+        if (b.pageX || b.pageY) {
+            c.x = b.pageX;
+            c.y = b.pageY
+        } else {
+            if (b.clientX || b.clientY) {
+                c.x = b.clientX + document.body.scrollLeft + document.documentElement.scrollLeft;
+                c.y = b.clientY + document.body.scrollTop + document.documentElement.scrollTop
+            }
+        }
+        a.style.top = c.y + "px";
+        a.style.left = c.x + "px";
+        a.style.display = "block";
+        document.onclick = Interface.hideAllMenus;
+        b.cancelBubble = true;
+        if (b.stopPropagation) {
+            b.stopPropagation()
+        }
+    }
+};
+window.onload = Interface.init;
+
+macros.back.onclick = function(back, steps) {
+    var title;
+    if (back) {
+        if (tale.canUndo()) {
+          window.history.go(-steps);
+          return;
+        }
+        while(steps-- >= 0 && state.history.length>1) {
+            title = state.history[0].passage.title;
+            state.history.shift();
+        }
+        state.loadLinkVars();
+        state.saveVariables(tale.get(title));
+        state.display(title, null, "back");
+    }
+    else {
+        state.display(state.history[steps].passage.title);
+    }
+};
+
+window.onpopstate = function(e) {
+    var title, hist, steps, s = e && e.state;
+    if (s && s.id && s.length != null) {
+        hist = JSON.parse(sessionStorage.getItem("history"+s.id)),
+        steps = hist.length-s.length;
+    }
+    if (hist != null && steps != null) {
+        state.history = hist;
+        while(steps-- >= 0 && state.history.length>1) {
+            title = state.history[0].passage.title;
+            state.history.shift();
+        }
+        state.loadLinkVars();
+        state.saveVariables(tale.get(title));
+        state.display(title, null, "back");
+    }
+};
+
+
+testplay = "";
+
+}());
+</script>
+<script title="modules">
+
+
+</script>
+<style id="baseCSS">
+body {
+	background-color: #000;
+	color: #fff;
+	font-family: Verdana,sans-serif;
+	font-size: 62.5%;
+	margin: 4em 15% 5% 5em;
+}
+#sidebar {
+	position: fixed;
+	width: 12em;
+	left: 7.5em;
+	list-style: none;
+	margin: 0;
+	padding: 0 1em 0 0;
+	font: bold 1.1em Verdana,sans-serif;
+}
+#sidebar ul {
+	padding: 0;
+}
+#sidebar li {
+	color: #333;
+	text-align: right;
+	background-repeat: no-repeat;
+	margin-bottom: 1em;
+	line-height: 1.4em;
+	list-style: none;
+}
+#sidebar li a {
+	color: #333;
+	text-decoration: none;
+}
+#sidebar li a:hover, #sidebar #title a:hover, #snapback:hover, #restart:hover {
+	color: #fff;
+	cursor: pointer;
+	text-decoration: none;
+}
+#sidebar #title {
+	color: #999;
+	font-size: 150%;
+	cursor: auto;
+}
+#sidebar #title a {
+	color: #999;
+}
+#sidebar #storySubtitle {
+	font-size: 75%;
+	display: block;
+}
+#storyAuthor {
+	font-size: 50%;
+}
+#sidebar #storyMenu {
+	display: block;
+	line-height: 2.5em;
+	margin-bottom: .5em;
+	color: #999;
+	cursor: auto;
+}
+#sidebar #title:hover {
+	color: #999;
+}
+#sidebar #credits {
+	padding-top: 2em;
+	font-weight: normal;
+	font-size: 80%;
+	cursor: auto;
+}
+#sidebar #credits:hover {
+	color: #333;
+}
+#sidebar #credits a {
+	text-decoration: none;
+}
+.menu {
+	position: absolute;
+	display: none;
+	background-color: #343434;
+	color: #fff;
+	opacity: .9;
+	z-index: 5;
+	border: 1px solid #fff;
+	text-align: left;
+	font: 1.1em Verdana;
+	line-height: 2em;
+}
+.menu div {
+	padding: 0 .4em;
+}
+.menu div:hover {
+	cursor: pointer;
+	background-color: #fff;
+	color: #343434;
+}
+#passages {
+	margin-left: 18.2em;
+	border-left: 1px solid #333;
+	padding-left: 1.5em;
+	position:relative;
+}
+.storyElement {
+	white-space: pre-line;
+}
+.passage {
+	white-space: pre-wrap;
+	font-size: 1.2em;
+	line-height: 175%;
+	margin-bottom: 2em;
+	text-align: left;
+}
+.passage center {
+	max-width:50%;
+	margin:auto;
+}
+.passage a {
+	color: #4d6ad8;
+	font-weight: bold;
+	text-decoration: none;
+}
+a.internalLink, a.externalLink, a.back, a.return {
+	cursor: pointer;
+}
+.passage a:hover {
+	color: #8ea6ff;
+	text-decoration: underline;
+}
+a.brokenLink {
+	background-color: red;
+	text-decoration: none;
+	color: #000;
+}
+.disabled {
+	font-weight: bold;
+	color: #333;
+}
+.marked {
+	background-color: red;
+	color: #000;
+	margin-right: 12px;
+	padding: 3px;
+}
+.marked[title] {
+	cursor: help;
+}
+.content > ul {
+	padding-top: 1.3em;
+}
+.passage ul {
+	margin-left: .5em;
+	padding-left: 1.5em;
+}
+.passage li {
+	margin-right: 6em;
+}
+.passage li[data-bullet] {
+	list-style-type: none;
+}
+.passage li[data-bullet]:before {
+	content: attr(data-bullet);
+	position: relative;
+	left: -1em;
+}
+.passage ol {
+	margin-left: .5em;
+	padding-left: 1.5em;
+}
+.passage table {
+	border-collapse: collapse;
+	font-size: 100%;
+	margin: .8em 1.0em;
+}
+.passage th,.passage td,.passage tr,.passage caption {
+	padding: 3px;
+}
+.passage hr {
+	height: 1px;
+}
+input, button {
+	background-color: #000;
+	color:#fff;
+	font-size: 1.2em;
+}
+button {
+	border: 2px outset #333;
+	border-radius:0.5em;
+	padding: 0.2em 0.8em;
+}
+button:active {
+	border-style:solid;
+}
+input[type=text] {
+	border: 2px solid #333;
+	width: 20%;
+}
+input[type=text]:hover {
+	border-color: #fff;
+}
+#storeArea {
+	display: none;
+}
+#noscript {
+	margin-left: 18.2em;
+	font-size: 1.2em;
+	font-weight: bold;
+}
+img {
+	vertical-align:bottom;
+}
+@media screen and (max-width: 640px) {
+	body {
+		margin: 5%;
+	}
+	#sidebar {
+		position: static;
+		width: 100%;
+		padding: 0;
+		border-bottom: 1px solid #333;
+	}
+	#sidebar li  {
+		text-align: center;
+	}
+	#passages {
+		padding-top: 2em;
+		margin-left: 0em;
+		border-left: 0;
+		min-height: 100vh;
+	}
+}
+</style>
+<style id="transitionCSS">
+.transition-in {
+	opacity:0;
+	position:absolute;
+}
+.passage:not(.transition-out) {
+	transition: 1s;
+	-webkit-transition: 1s;
+}
+.transition-out {
+	opacity:0 !important;
+	position:absolute;
+}
+</style>
+<style id="storyCSS"></style>
+<style id="tagCSS"></style>
+</head>
+<body>
+<div id="narF_middlewrapper">
+	<div id="title" class="storyElement"><span id="storyTitle" class="storyElement"></span><span id="storySubtitle" class="storyElement"></span><span id="titleSeparator"></span><span id="storyAuthor" class="storyElement"></span></div>
+	<ul id="sidebar">
+		<li id="storyMenu" class="storyElement" style="display:none"></li>
+		<li id="snapback">Rewind</li>
+		<li id="restart">Restart</li>
+		<li><a id="bookmark" title="Permanent link to this passage">Bookmark</a></li>
+		<li id="credits">
+		This story was created with <a href="http://twinery.org/">Twine</a> and is powered by <a href="http://tiddlywiki.com/">TiddlyWiki</a>
+		</li>
+	</ul>
+	<div id="snapbackMenu" class="menu"></div>
+	<div id="passages">
+	<noscript><div id="noscript">Please enable Javascript to play this story!</div></noscript>
+	<style>#sidebar{display:none;}</style>
+	</div>
+</div>
+<div id="storeArea"><div tiddler="Macro either" tags="script-désactivé" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">//depeciated with Twine 1.4\n//http://www.glorioustrainwrecks.com/node/6375/revisions/10474/view\n//by L\nwindow.either = function() { return arguments[~~(Math.random()*arguments.length)];}</div><div tiddler="Postuler raccourcis" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">&lt;&lt;silently&gt;&gt;\n&lt;&lt;display &quot;Recherche dans tous les studios&quot;&gt;&gt;\n&lt;&lt;endsilently&gt;&gt;\n&lt;&lt;display &quot;Postuler&quot;&gt;&gt;</div><div tiddler="gros espace qui disparait" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">&lt;&lt;timedreplace 2s&gt;&gt;\n[img[images/loading.gif]]\n&lt;&lt;becomes&gt;&gt;&lt;&lt;endtimedreplace&gt;&gt;</div><div tiddler="Entrer nom" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">Veuillez entrer le nom associé à votre compte.\n\nNom complet: &lt;&lt;textinput $nom [[ok|Recherche dans un studio spécifique]]&gt;&gt;</div><div tiddler="Recherche dans un studio spécifique" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">Rechercher par studio &lt;&lt;later&gt;&gt;&lt;&lt;replace &quot;(?)&quot;&gt;&gt;\n(Le nombre de studios affichés ici dépend de ton niveau de chercheur d'emplois.)&lt;&lt;endreplace&gt;&gt;&lt;&lt;endlater&gt;&gt;\n\n- [[Ubisoft|remplacer par studio spécifique][$studioRemplaçant = &quot;Ubisoft&quot;]]\n- [[EA|remplacer par studio spécifique][$studioRemplaçant = &quot;EA&quot;]]\n&lt;&lt;later&gt;&gt;- [[Warner|remplacer par studio spécifique][$studioRemplaçant = &quot;Warner&quot;]]\n- [[Eidos|remplacer par studio spécifique][$studioRemplaçant = &quot;Eidos&quot;]]\n- [[Bioware|remplacer par studio spécifique][$studioRemplaçant = &quot;Bioware&quot;]]\n&lt;&lt;endlater&gt;&gt;\n&lt;&lt;once&gt;&gt;(Note: Le nombre de studios affichés ici dépend de ton niveau de chercheur d'emplois)&lt;&lt;endonce&gt;&gt;</div><div tiddler="Macro textinput" tags="script-désactivé" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">//https://groups.google.com/forum/#!msg/tweecode/Rl-OhqTQvb4/qbVIL768WTUJ\n//by HarmlessTrouble\ntry {\n  version.extensions['textinput'] = { \n    major:1, minor:0, revision:0 \n  };\n\tmacros['textinput'] = {\n\t\thandler: function(place, macroName, params, parser) {\n\t\t\t\tv = params[0].replace(&quot;$&quot;,&quot;&quot;);\n\t\t\t\tvar input= document.createElement('input');\n\t\t\t\tinput.type = &quot;text&quot;;\n\t\t\t\td = v+&quot;TextInput&quot;;\n\t\t\t\tinput.id = d;\n\t\t\t\tinput.addEventListener('keyup', function()\n\t\t\t\t{\n\t\t\t\t\tstate.history[0].variables[v] = document.getElementById(d).value;\n\t\t\t\t});\n\t\t\t\tplace.appendChild(input);\n\t\t},\t\n\t\tinit: function() { var v; var d;},\n\t};\n} catch(e) {\n  throwError(place,&quot;textinput Setup Error: &quot;+e.message); \n}</div><div tiddler="créer mot de passe" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">!!!Nouveau!\nLe site Emplois 1000 a reçu une mise à jour. Vous pouvez maintenant sauvegarder vos lettres de présentation pour pouvoir les réutiliser facilement par la suite.\n\nAfin de protéger votre identité, veuillez choisir un mot de passe.\n\s\n&lt;&lt;later&gt;&gt;\n&lt;div id=&quot;mdpErreur&quot;&gt;''Erreur''\nLe mot de passe choisi ne correspond pas à nos standards de sécurité.\n\nVotre mot de passe doit contenir au moins 8 caractères. De plus, il doit contenir au minimum:\n- une lettre majuscule\n- une lettre minuscule\n- un chiffre et/ou un caractère spécial&lt;&lt;later&gt;&gt;\n- un caractère chinois&lt;&lt;endlater&gt;&gt;\n\nDe plus, il ne doit pas contenir les caractères suivants: ~ * ( ) & ? % $ # @ ! / &lt; &gt; &lt;&lt;later&gt;&gt; &lt;&lt;gains&gt;&gt;\n\n!!!Erreur: Les mots de passe entrés ne correspondent pas.&lt;&lt;becomes&gt;&gt;33333&lt;&lt;endlater&gt;&gt;\n&lt;/div&gt;&lt;&lt;endlater&gt;&gt;\n\s\nChoisir un mot de passe:\n&lt;&lt;textinput $mdp1&gt;&gt;\n\nConfirmer le mot de passe:\n&lt;&lt;textinput $mdp2&gt;&gt;\n\nImportant: Vous devez apprendre par coeur votre mot de passe et ne pas l’écrire ou le divulger.\n\n&lt;&lt;button [[Confirmer|créer mot de passe]]&gt;&gt;\n\n[[annuler|annuler mot de passe]]</div><div tiddler="Start" tags="titre-caché" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">Après 1 an à déprimer à ton ancienne job minable, tu as enfin donné ta démission. Maintenant que tu as un diplôme en game design, trouver une job devrait être facile.\n\nProchain arrêt: la job de rêve! Game designer dans un prestigieux studio de Montréal!\n\nDans la dernière année, tu as accumulé assez d'argent pour te permettre de ne pas travailler et de chercher une job à temps plein. Tu as assez pour survenir à tes besoins (genre payer le condo!) pour au moins 6 mois! C'est ben en masse.\n\n[[Débuter]]\n\n&lt;&lt;silently&gt;&gt;\n&lt;&lt;display &quot;init lDescriptions&quot;&gt;&gt;\n&lt;&lt;display &quot;init lPostes&quot;&gt;&gt;\n&lt;&lt;display &quot;init lStudios&quot;&gt;&gt;\n&lt;&lt;display &quot;init lSkills&quot;&gt;&gt;\n&lt;&lt;display &quot;init lRefus&quot;&gt;&gt;\n\n&lt;&lt;display &quot;init lLettre1&quot;&gt;&gt;\n&lt;&lt;display &quot;init lLettre2&quot;&gt;&gt;\n&lt;&lt;display &quot;init lLettre3&quot;&gt;&gt;\n&lt;&lt;display &quot;init lLettre4&quot;&gt;&gt;\n&lt;&lt;display &quot;init lLettre5&quot;&gt;&gt;\n&lt;&lt;display &quot;init lLettre6&quot;&gt;&gt;\n&lt;&lt;display &quot;init lLettre7&quot;&gt;&gt;\n\n&lt;&lt;set $banque = 5000&gt;&gt;\n&lt;&lt;endsilently&gt;&gt;</div><div tiddler="Lire la réponse" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">Bonjour,\n\nNous accusons réception de votre curriculum vitae et apprécions l'intérêt\nque vous portez envers notre organisation. Nous traiterons votre demande\nd'emploi dans les plus brefs délais. Par la suite, nous conserverons\nvotre curriculum vitae pour une période de 6 mois.\n\nNous évaluons actuellement votre expérience et vos qualifications. Si\nvotre profil correspond aux exigences de l'emploi, un membre de la\nDirection des ressources humaines communiquera avec vous.\n\nPour en apprendre davantage au sujet de nos emplois, nous vous invitons\nà visiter régulièrement la section &quot;Emplois&quot; de notre site Web.\n\nSeules les personnes retenues pour une entrevue seront contactées.\n\nNous vous remercions de l'intérêt que vous nous manifestez et vous\nprions d'agréer l'expression de nos sentiments distingués.\n\nMerci et bonne journée.\n\n\n-----\n\n\nHello,\n\nWe would like to confirm that weve received your resume and appreciate your\ninterest in our company. We will process your job application as soon as\npossible and keep your CV for a period of six months.\n\nWe are currently evaluating your experience and qualifications. If your\nprofile fulfills the job requirements, a member of the Human Resources\ndepartment will contact you.\n\nTo learn more about our job offers, please visit the &quot;Jobs&quot; section of\nour website regularly.\n\nOnly applicants selected for an interview will be contacted.\n\nThank you for your interest, and please accept our sincerest regards.\n\nHave a good day.\n\n\n[[Ah...]]</div><div tiddler="init lRefus" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">&lt;&lt;set $lRefus = [ &quot;Peut-être qu’ils n’aiment pas mon nom?&quot;, &quot;Peut-être que je n’ai pas remplis correctement tous les champs?&quot;, &quot;Peut-être que j’ai fait des fautes de français dans ma lettre?&quot;, &quot;Peut-être que ma lettre était mal écrite?&quot;, &quot;Peut-être que je n’avais pas l’air assez motivé?&quot;, &quot;Peut-être que ma lettre était trop générique?&quot;, &quot;Peut-être que ma lettre n’était pas assez personnalisée?&quot;, &quot;Peut-être que ma lettre n’était pas assez reliée à ce que l’annonce disait?&quot;, &quot;Peut-être que je n’ai pas les compétences?&quot;, &quot;Sûrement qu’ils n’engagent pas de juniors…&quot;, &quot;Peut-être que je n’aurais pas dû exagérer…&quot;, &quot;Peut-être que je devrais mentir sur mes compétences…&quot;, &quot;Peut-être que je devrais mieux choisir les postes où j’applique?&quot;]&gt;&gt;</div><div tiddler="Débuter" tags="titre-caché" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">&lt;center&gt;\n!Faux Espoirs\n!!!L'impossible tâche de trouver une job en game design\n!!!!Un jeu autobiographique de narF\n\n\n&lt;&lt;once&gt;&gt;[[Débuter tes recherches|Accueil site emplois]]&lt;&lt;endonce&gt;&gt;\s\n&lt;&lt;later&gt;&gt;[[Crédits]]&lt;&lt;endlater&gt;&gt;\n&lt;/center&gt;</div><div tiddler="Conseil" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">//«&lt;&lt;print $lRefus[Math.floor(Math.random()*$lRefus.length)]&gt;&gt;»//</div><div tiddler="lire offre4" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">&lt;&lt;set $numero = 4&gt;&gt;\n&lt;&lt;display &quot;offre&quot;&gt;&gt;</div><div tiddler="Recherche dans tous les studios" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">Recherche d'offre d'emploi en cours...\n\n&lt;&lt;silently&gt;&gt;\n&lt;&lt;set $offre0 = []&gt;&gt;\n&lt;&lt;set $offre0.push($lPostes[Math.floor(Math.random()*$lPostes.length)])&gt;&gt;\n&lt;&lt;set $offre0.push($lStudios[Math.floor(Math.random()*$lStudios.length)])&gt;&gt;\n&lt;&lt;set $offre0.push($lDescriptions[Math.floor(Math.random()*$lDescriptions.length)])&gt;&gt;\n&lt;&lt;set $offre0.push($lDescriptions[Math.floor(Math.random()*$lDescriptions.length)])&gt;&gt;\n&lt;&lt;set $offre0.push($lDescriptions[Math.floor(Math.random()*$lDescriptions.length)])&gt;&gt;\n&lt;&lt;set $offre0.push($lDescriptions[Math.floor(Math.random()*$lDescriptions.length)])&gt;&gt;\n&lt;&lt;set $offre0.push($lDescriptions[Math.floor(Math.random()*$lDescriptions.length)])&gt;&gt;\n\n&lt;&lt;set $offre1 = []&gt;&gt;\n&lt;&lt;set $offre1.push($lPostes[Math.floor(Math.random()*$lPostes.length)])&gt;&gt;\n&lt;&lt;set $offre1.push($lStudios[Math.floor(Math.random()*$lStudios.length)])&gt;&gt;\n&lt;&lt;set $offre1.push($lDescriptions[Math.floor(Math.random()*$lDescriptions.length)])&gt;&gt;\n&lt;&lt;set $offre1.push($lDescriptions[Math.floor(Math.random()*$lDescriptions.length)])&gt;&gt;\n&lt;&lt;set $offre1.push($lDescriptions[Math.floor(Math.random()*$lDescriptions.length)])&gt;&gt;\n&lt;&lt;set $offre1.push($lDescriptions[Math.floor(Math.random()*$lDescriptions.length)])&gt;&gt;\n&lt;&lt;set $offre1.push($lDescriptions[Math.floor(Math.random()*$lDescriptions.length)])&gt;&gt;\n\n&lt;&lt;set $offre2 = []&gt;&gt;\n&lt;&lt;set $offre2.push($lPostes[Math.floor(Math.random()*$lPostes.length)])&gt;&gt;\n&lt;&lt;set $offre2.push($lStudios[Math.floor(Math.random()*$lStudios.length)])&gt;&gt;\n&lt;&lt;set $offre2.push($lDescriptions[Math.floor(Math.random()*$lDescriptions.length)])&gt;&gt;\n&lt;&lt;set $offre2.push($lDescriptions[Math.floor(Math.random()*$lDescriptions.length)])&gt;&gt;\n&lt;&lt;set $offre2.push($lDescriptions[Math.floor(Math.random()*$lDescriptions.length)])&gt;&gt;\n&lt;&lt;set $offre2.push($lDescriptions[Math.floor(Math.random()*$lDescriptions.length)])&gt;&gt;\n&lt;&lt;set $offre2.push($lDescriptions[Math.floor(Math.random()*$lDescriptions.length)])&gt;&gt;\n\n&lt;&lt;set $offre3 = []&gt;&gt;\n&lt;&lt;set $offre3.push($lPostes[Math.floor(Math.random()*$lPostes.length)])&gt;&gt;\n&lt;&lt;set $offre3.push($lStudios[Math.floor(Math.random()*$lStudios.length)])&gt;&gt;\n&lt;&lt;set $offre3.push($lDescriptions[Math.floor(Math.random()*$lDescriptions.length)])&gt;&gt;\n&lt;&lt;set $offre3.push($lDescriptions[Math.floor(Math.random()*$lDescriptions.length)])&gt;&gt;\n&lt;&lt;set $offre3.push($lDescriptions[Math.floor(Math.random()*$lDescriptions.length)])&gt;&gt;\n&lt;&lt;set $offre3.push($lDescriptions[Math.floor(Math.random()*$lDescriptions.length)])&gt;&gt;\n&lt;&lt;set $offre3.push($lDescriptions[Math.floor(Math.random()*$lDescriptions.length)])&gt;&gt;\n\n&lt;&lt;set $offre4 = []&gt;&gt;\n&lt;&lt;set $offre4.push($lPostes[Math.floor(Math.random()*$lPostes.length)])&gt;&gt;\n&lt;&lt;set $offre4.push($lStudios[Math.floor(Math.random()*$lStudios.length)])&gt;&gt;\n&lt;&lt;set $offre4.push($lDescriptions[Math.floor(Math.random()*$lDescriptions.length)])&gt;&gt;\n&lt;&lt;set $offre4.push($lDescriptions[Math.floor(Math.random()*$lDescriptions.length)])&gt;&gt;\n&lt;&lt;set $offre4.push($lDescriptions[Math.floor(Math.random()*$lDescriptions.length)])&gt;&gt;\n&lt;&lt;set $offre4.push($lDescriptions[Math.floor(Math.random()*$lDescriptions.length)])&gt;&gt;\n&lt;&lt;set $offre4.push($lDescriptions[Math.floor(Math.random()*$lDescriptions.length)])&gt;&gt;\n\n&lt;&lt;set $offres = [$offre0, $offre1, $offre2, $offre3, $offre4]&gt;&gt;\n\n&lt;&lt;endsilently&gt;&gt;\s\n&lt;&lt;timedreplace 1s&gt;&gt;[img[images/loading.gif]]&lt;&lt;becomes&gt;&gt;&lt;&lt;display &quot;recherche globale&quot;&gt;&gt;&lt;&lt;endtimedreplace&gt;&gt;</div><div tiddler="lire offre1" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">&lt;&lt;set $numero = 1&gt;&gt;\n&lt;&lt;display &quot;offre&quot;&gt;&gt;</div><div tiddler="lire offre0" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">&lt;&lt;set $numero = 0&gt;&gt;\n&lt;&lt;display &quot;offre&quot;&gt;&gt;</div><div tiddler="lire offre3" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">&lt;&lt;set $numero = 3&gt;&gt;\n&lt;&lt;display &quot;offre&quot;&gt;&gt;</div><div tiddler="lire offre2" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">&lt;&lt;set $numero = 2&gt;&gt;\n&lt;&lt;display &quot;offre&quot;&gt;&gt;</div><div tiddler="Improved back and forward" tags="script-désactivé" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">//Faire que les variables random deviennent statiques\n//by L\n//http://www.glorioustrainwrecks.com/node/5425\n(function(){var hasPushState=(typeof window.history.pushState==&quot;function&quot;);\nHistory.prototype.display=function(d,b,a){var c=tale.get(d);if(a!=&quot;back&quot;){this.history.unshift({passage:c,variables:clone(this.history[0].variables)});\nthis.history[0].hash=this.save();if(hasPushState&&this.history){if(this.history.length==2&&window.history.state===null){window.history.replaceState(this.history,document.title)\n}else{window.history.pushState(this.history,document.title)}}}this.history[0].hash=this.save();\nvar e=c.render();e.style.visibility=&quot;visible&quot;;if(a!=&quot;offscreen&quot;){var p=$(&quot;passages&quot;);\nfor(var j=0;j&lt;p.childNodes.length;j+=1){var q=p.childNodes[j];\nq.classList.add(&quot;transition-out&quot;);setTimeout(function(){if(q.parentNode){q.parentNode.removeChild(q)\n}},1000)}e.classList.add(&quot;transition-in&quot;);setTimeout(function(){e.classList.remove(&quot;transition-in&quot;)\n},1);p.appendChild(e)}if((a==&quot;quietly&quot;)||(a==&quot;offscreen&quot;)){e.style.visibility=&quot;visible&quot;\n}if(a!=&quot;offscreen&quot;){document.title=tale.title+&quot;: &quot;+c.title;this.hash=this.save();\nif(!hasPushState){window.location.hash=this.hash}window.scroll(0,0)\n}return e};History.prototype.restart=function(){if(hasPushState){window.location.reload()\n}else{window.location.hash=&quot;&quot;}};macros[&quot;return&quot;]=macros.back={handler:function(a,b,e){var el,d=&quot;&quot;;\nvar steps=1;if(e[0]){if(e[1]==&quot;steps&quot;){if(isNaN(e[0])){throwError(a,&quot;parameter before 'steps' must be a number.&quot;);\nreturn}else{if(e[0]&lt;state.history.length){d=state.history[e[0]].passage.title;\nsteps=e[0]}}}else{if(tale.get(e[0]).id==undefined){throwError(a,&quot;The &quot;+e[0]+&quot; passage does not exist&quot;);\nreturn}for(var c=0;c&lt;state.history.length;c++){if(state.history[c].passage.title==e[0]){d=e[0];\nsteps=c;break}}}}else{d=state.history[1].passage.title}if(!d){return\n}else{el=document.createElement(&quot;a&quot;);el.className=&quot;return&quot;;el.onclick=function(){if(b==&quot;back&quot;){if(hasPushState){window.history.back();\nreturn}while(steps&gt;=0){if(state.history.length&gt;1){state.history.shift()\n}steps--}}state.display(d)};el.href=&quot;javascript:void(0)&quot;;el.innerHTML=&quot;&lt;b&gt;«&lt;/b&gt; &quot;+b[0].toUpperCase()+b.slice(1);\na.appendChild(el)}}};Interface.buildSnapback=function(){var c=false;\nremoveChildren(document.getElementById(&quot;snapbackMenu&quot;));for(var a=state.history.length-1;\na&gt;=0;a--){if(state.history[a].passage&&state.history[a].passage.tags.indexOf(&quot;bookmark&quot;)!=-1){var b=document.createElement(&quot;div&quot;);\nb.pos=a;b.onclick=function(){var p=this.pos;var n=state.history[p].passage.title;\nwindow.history.go(-(p+1));while(p&gt;=0){if(state.history.length&gt;1){state.history.shift()\n}p--}state.display(n)};b.innerHTML=Passage.prototype.excerpt.call(state.history[a].passage);\ndocument.getElementById(&quot;snapbackMenu&quot;).appendChild(b);c=true\n}}if(!c){var b=document.createElement(&quot;div&quot;);b.innerHTML=&quot;&lt;i&gt;No passages available&lt;/i&gt;&quot;;\ndocument.getElementById(&quot;snapbackMenu&quot;).appendChild(b)}};History.prototype.init=function(){if(!this.restore()){this.display(&quot;Start&quot;,null)\n}if(!hasPushState){this.hash=window.location.hash;this.interval=window.setInterval(function(){a.watchHash.apply(a)\n},250)}};window.onpopstate=function(e){if(e.state===null){return\n}if(e.state&&e.state.length&gt;0){state.history=e.state}else{state=new History();\nstate.init()}state.display(state.history[0].passage.title,null,&quot;back&quot;)\n};if(hasPushState&&state&&state.interval){clearInterval(state.interval)\n}}());</div><div tiddler="Level up!" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">!!Level up!\n\nTu es maintenant un chercheur d'emplois de niveau &lt;&lt;print visited(&quot;Level up!&quot;) +1&gt;&gt;!\n\n&lt;&lt;once&gt;&gt;Tes recherches te font découvrir les studios suivants: Warner, Eidos, Bioware.&lt;&lt;endonce&gt;&gt;\s\n&lt;&lt;later&gt;&gt;Tu as débloqué de nouvelles options pour tes lettres de présentations.&lt;&lt;becomes&gt;&gt;Tes recherche te font découvrir plein de studios indépendants à Montréal. Tu pourra maintenant faire des recherches globales dans tous les studios à partir du site //Emplois 1000//. Excellent!&lt;&lt;becomes&gt;&gt;Tu as mis à jour ton CV. Tu as maintenant de meilleure chance d'avoir une réponse!&lt;&lt;becomes&gt;&gt;Tu as créé un profil sur Linkedin. Ça devrait être vraiment bien pour avoir des contacts!&lt;&lt;becomes&gt;&gt;Nice! Tu as maintenant une bonne centaine de contacts sur ton LinkedIn! Une super job ne devrait pas tarder!&lt;&lt;becomes&gt;&gt;Tu as débloqué de nouvelles options pour tes lettres de présentations.&lt;&lt;becomes&gt;&gt;Tu n'as rien débloqué. Il n'y a plus vraiment place à l'amélioration. Il faut juste persévérer!&lt;&lt;endlater&gt;&gt;\n\n[[Nouvelle recherche|Accueil site emplois]]</div><div tiddler="recherche globale" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">Résultats de la recherche:\n- &lt;&lt;print $offres[0][0]&gt;&gt; chez &lt;&lt;print $offres[0][1]&gt;&gt; [[Cliquez pour lire|lire offre0]]\n- &lt;&lt;print $offres[1][0]&gt;&gt; chez &lt;&lt;print $offres[1][1]&gt;&gt; [[Cliquez pour lire|lire offre1]]\n- &lt;&lt;print $offres[2][0]&gt;&gt; chez &lt;&lt;print $offres[2][1]&gt;&gt; [[Cliquez pour lire|lire offre2]]\n&lt;&lt;timedreplace 2s&gt;&gt;[img[images/loading.gif]]&lt;&lt;becomes&gt;&gt;\s\n- &lt;&lt;print $offres[3][0]&gt;&gt; chez &lt;&lt;print $offres[3][1]&gt;&gt; [[Cliquez pour lire|lire offre3]]\n- &lt;&lt;print $offres[4][0]&gt;&gt; chez &lt;&lt;print $offres[4][1]&gt;&gt; [[Cliquez pour lire|lire offre4]]\n&lt;&lt;endtimedreplace&gt;&gt;\n\n&lt;&lt;set $resultatDejaVu = true&gt;&gt;</div><div tiddler="Crédits" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">''Crédits''\n\nUn jeu de narF.\n\nRemerciements à la communauté sur les forums de Twinery.org, spécialement Leon Arnott et mth.\n\nRemerciements à mes gentils playtesters: Annie, ...\n\n[[Retour|previous()]]</div><div tiddler="tests de tableaux" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">&lt;&lt;set $t1 = [1,2,3]&gt;&gt;\n&lt;&lt;set $t2 = $t1.concat()&gt;&gt;\n\n&lt;&lt;print $t1&gt;&gt;\n&lt;&lt;print $t2&gt;&gt;\n\n&lt;&lt;set $t1.pop()&gt;&gt;\n\n&lt;&lt;print $t1&gt;&gt;\n&lt;&lt;print $t2&gt;&gt;</div><div tiddler="faire apparaître le menu en debug" tags="stylesheet" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">#sidebar {\n\tvisibility: visible !important;\n\tright: 10px;\n\tbottom: 10px;\n\tleft: initial;\n}</div><div tiddler="offre" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">[[&lt;&lt;Retour aux offres|recherche globale]]\n\nOffre d'emploi:\n\n''&lt;&lt;print $offres[$numero][0]&gt;&gt; chez &lt;&lt;print $offres[$numero][1]&gt;&gt;''\n*&lt;&lt;print $offres[$numero][2]&gt;&gt;\n*&lt;&lt;print $offres[$numero][3]&gt;&gt;\n*&lt;&lt;print $offres[$numero][4]&gt;&gt;\n*&lt;&lt;print $offres[$numero][5]&gt;&gt;\n*&lt;&lt;print $offres[$numero][6]&gt;&gt;\n\n[[Postuler&gt;&gt;|Postuler]]\n\n\n[[&lt;&lt;Retour aux offres|recherche globale]]</div><div tiddler="1 semaine passe" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">1 semaine passe. &lt;&lt;if visited() neq 5&gt;&gt;Tu n'as pas reçu de réponse.\n\n&lt;&lt;display &quot;Conseil&quot;&gt;&gt;\n&lt;&lt;else if visited() is 5&gt;&gt;[[Tu reçois une réponse!]]&lt;&lt;endif&gt;&gt;\n\n&lt;&lt;set $banque -= 500&gt;&gt;\nIl reste &lt;&lt;print $banque&gt;&gt;$ dans ton compte de banque.\n&lt;&lt;if $banque gt 500&gt;&gt;\n&lt;&lt;if visited() neq 5&gt;&gt;[[Level up!]]&lt;&lt;endif&gt;&gt;\n&lt;&lt;else&gt;&gt;\n[[Il ne te reste presque plus d'argent|Game Over]]\n&lt;&lt;endif&gt;&gt;</div><div tiddler="Combined Replace Macro Set" tags="script" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">//by L\n//http://www.glorioustrainwrecks.com/node/5462\n(function(){version.extensions.replaceMacrosCombined={major:1,minor:1,revision:3};var nullobj={handler:function(){}};function showVer(n,notrans){if(!n){return\n}n.innerHTML=&quot;&quot;;new Wikifier(n,n.tweecode);n.setAttribute(&quot;data-enabled&quot;,&quot;true&quot;);n.style.display=&quot;inline&quot;;n.classList.remove(&quot;revision-span-out&quot;);\nif(!notrans){n.classList.add(&quot;revision-span-in&quot;);if(n.timeout){clearTimeout(n.timeout)}n.timeout=setTimeout(function(){n.classList.remove(&quot;revision-span-in&quot;);\nn=null},1)}}function hideVer(n,notrans){if(!n){return}n.setAttribute(&quot;data-enabled&quot;,&quot;false&quot;);n.classList.remove(&quot;revision-span-in&quot;);\nif(n.timeout){clearTimeout(n.timeout)}if(!notrans){n.classList.add(&quot;revision-span-out&quot;);n.timeout=setTimeout(function(){if(n.getAttribute(&quot;data-enabled&quot;)==&quot;false&quot;){n.classList.remove(&quot;revision-span-out&quot;);\nn.style.display=&quot;none&quot;;n.innerHTML=&quot;&quot;}n=null},1000)}else{n.style.display=&quot;none&quot;;n.innerHTML=&quot;&quot;;n=null}}function tagcontents(b,starttags,desttags,endtags,k){var l=0,c=&quot;&quot;,tg,a,i;\nfunction tagfound(i,e){for(var j=0;j&lt;e.length;j++){if(a.indexOf(&quot;&lt;&lt;&quot;+e[j],i)==i){return e[j]}}}a=b.source.slice(k);for(i=0;\ni&lt;a.length;i++){if(tg=tagfound(i,starttags)){l++}else{if((tg=tagfound(i,desttags))&&l==0){b.nextMatch=k+i+tg.length+4;return[c,tg]\n}else{if(tg=tagfound(i,endtags)){l--;if(l&lt;0){return null}}}}c+=a.charAt(i)}return null}var begintags=[];var endtags=[];function revisionSpanHandler(g,e,f,b){var k=b.source.indexOf(&quot;&gt;&gt;&quot;,b.matchStart)+2,vsns=[],vtype=e,flen=f.length,becomes,c,cn,m,h,vsn;\nfunction mkspan(vtype){h=insertElement(m,&quot;span&quot;,null,&quot;revision-span &quot;+vtype);h.setAttribute(&quot;data-enabled&quot;,false);h.style.display=&quot;none&quot;;\nh.tweecode=&quot;&quot;;return h}if(this.shorthand&&flen){while(f.length&gt;0){vsns.push([f.shift(),(this.flavour==&quot;insert&quot;?&quot;gains&quot;:&quot;becomes&quot;)])\n}}else{if(this.flavour==&quot;insert&quot;||(this.flavour==&quot;continue&quot;&&this.trigger==&quot;time&quot;)){vsns.push([&quot;&quot;,&quot;becomes&quot;])}}if(this.flavour==&quot;continue&quot;&&flen){b.nextMatch=k+b.source.slice(k).length;\nvsns.push([b.source.slice(k),vtype])}else{becomes=[&quot;becomes&quot;,&quot;gains&quot;];c=tagcontents(b,begintags,becomes.concat(endtags),endtags,k);\nif(c&&endtags.indexOf(c[1])==-1){while(c){vsns.push(c);c=tagcontents(b,begintags,becomes,endtags,b.nextMatch)}c=tagcontents(b,begintags,[&quot;end&quot;+e],endtags,b.nextMatch)\n}if(!c){throwError(g,&quot;can't find matching end&quot;+e);return}vsns.push(c);if(this.flavour==&quot;continue&quot;){k=b.nextMatch;b.nextMatch=k+b.source.slice(k).length;\nvsns.push([b.source.slice(k),&quot;&quot;])}}if(this.flavour==&quot;remove&quot;){vsns.push([&quot;&quot;,&quot;becomes&quot;])}cn=0;m=insertElement(g,&quot;span&quot;,null,e);\nm.setAttribute(&quot;data-flavour&quot;,this.flavour);h=mkspan(&quot;initial&quot;);vsn=vsns.shift();h.tweecode=vsn[0];showVer(h,true);while(vsns.length&gt;0){if(vsn){vtype=vsn[1]\n}vsn=vsns.shift();h=mkspan(vtype);h.tweecode=vsn[0]}if(typeof this.setup==&quot;function&quot;){this.setup(m,g,f)}}function quantity(m){return(m.children.length-1)+(m.getAttribute(&quot;data-flavour&quot;)==&quot;remove&quot;)\n}function revisionSetup(m,g,f){m.className+=&quot; &quot;+f[0].replace(&quot; &quot;,&quot;_&quot;)}function keySetup(m,g,f){var key=f[0];m.setEventListener(&quot;keydown&quot;,function l(e){var done=!revise(&quot;revise&quot;,m);\nif(done){m.removeEventListener(&quot;keydown&quot;,l)}})}function timeSetup(m,g,f){function cssTimeUnit(s){if(typeof s==&quot;string&quot;){if(s.slice(-2).toLowerCase()==&quot;ms&quot;){return Number(s.slice(0,-2))||0\n}else{if(s.slice(-1).toLowerCase()==&quot;s&quot;){return Number(s.slice(0,-1))*1000||0}}}throwError(g,s+&quot; isn't a CSS time unit&quot;);\nreturn 0}var tm=cssTimeUnit(f[0]);setTimeout(function timefn(){var done=!revise(&quot;revise&quot;,m);if(!done){setTimeout(timefn,tm)\n}},tm)}function hoverSetup(m){var fn,noMouseEnter=(document.head.onmouseenter!==null);m.onmouseenter=function(){revise(&quot;revise&quot;,this)\n};m.onmouseleave=function(){revise(&quot;revert&quot;,this)};if(noMouseEnter){fn=function(n){return function(e){if(!event.relatedTarget||(event.relatedTarget!=this&&!(this.compareDocumentPosition(event.relatedTarget)&Node.DOCUMENT_POSITION_CONTAINED_BY))){this[n]()\n}}};m.onmouseover=fn(&quot;onmouseenter&quot;);m.onmouseout=fn(&quot;onmouseleave&quot;)}m=null}function mouseSetup(m){var evt=(document.head.onmouseenter===null?&quot;onmouseenter&quot;:&quot;onmouseover&quot;);\nm[evt]=function(){var done=!revise(&quot;revise&quot;,this);if(done){this[evt]=null}};m=null}function linkSetup(m,g,f){var l=Wikifier.createInternalLink(),p=m.parentNode;\nl.className=&quot;internalLink replaceLink&quot;;p.insertBefore(l,m);l.insertBefore(m,null);l.onclick=function(){var p,done=false;if(m&&m.parentNode==this){done=!revise(&quot;revise&quot;,m);\nscrollWindowTo(m)}if(done){this.parentNode.insertBefore(m,this);this.parentNode.removeChild(this)}};l=null}function visitedSetup(m,g,f){var i,done,shv=state.history[0].variables,os=&quot;once seen&quot;,d=(m.firstChild&&(this.flavour==&quot;insert&quot;?m.firstChild.nextSibling:m.firstChild).tweecode);\nshv[os]=shv[os]||{};if(d&&!shv[os].hasOwnProperty(d)){shv[os][d]=1}else{for(i=shv[os][d];i&gt;0&&!done;i--){done=!revise(&quot;revise&quot;,m,true)\n}if(shv[os].hasOwnProperty(d)){shv[os][d]+=1}}}[{name:&quot;insert&quot;,flavour:&quot;insert&quot;,trigger:&quot;link&quot;,setup:linkSetup},{name:&quot;timedinsert&quot;,flavour:&quot;insert&quot;,trigger:&quot;time&quot;,setup:timeSetup},{name:&quot;insertion&quot;,flavour:&quot;insert&quot;,trigger:&quot;revisemacro&quot;,setup:revisionSetup},{name:&quot;later&quot;,flavour:&quot;insert&quot;,trigger:&quot;visited&quot;,setup:visitedSetup},{name:&quot;keyinsert&quot;,flavour:&quot;insert&quot;,trigger:&quot;key&quot;,setup:keySetup},{name:&quot;replace&quot;,flavour:&quot;replace&quot;,trigger:&quot;link&quot;,setup:linkSetup},{name:&quot;timedreplace&quot;,flavour:&quot;replace&quot;,trigger:&quot;time&quot;,setup:timeSetup},{name:&quot;mousereplace&quot;,flavour:&quot;replace&quot;,trigger:&quot;mouse&quot;,setup:mouseSetup},{name:&quot;hoverreplace&quot;,flavour:&quot;replace&quot;,trigger:&quot;hover&quot;,setup:hoverSetup},{name:&quot;revision&quot;,flavour:&quot;replace&quot;,trigger:&quot;revisemacro&quot;,setup:revisionSetup},{name:&quot;keyreplace&quot;,flavour:&quot;replace&quot;,trigger:&quot;key&quot;,setup:keySetup},{name:&quot;timedremove&quot;,flavour:&quot;remove&quot;,trigger:&quot;time&quot;,setup:timeSetup},{name:&quot;mouseremove&quot;,flavour:&quot;remove&quot;,trigger:&quot;mouse&quot;,setup:mouseSetup},{name:&quot;hoverremove&quot;,flavour:&quot;remove&quot;,trigger:&quot;hover&quot;,setup:hoverSetup},{name:&quot;removal&quot;,flavour:&quot;remove&quot;,trigger:&quot;revisemacro&quot;,setup:revisionSetup},{name:&quot;once&quot;,flavour:&quot;remove&quot;,trigger:&quot;visited&quot;,setup:visitedSetup},{name:&quot;keyremove&quot;,flavour:&quot;remove&quot;,trigger:&quot;key&quot;,setup:keySetup},{name:&quot;continue&quot;,flavour:&quot;continue&quot;,trigger:&quot;link&quot;,setup:linkSetup},{name:&quot;timedcontinue&quot;,flavour:&quot;continue&quot;,trigger:&quot;time&quot;,setup:timeSetup},{name:&quot;mousecontinue&quot;,flavour:&quot;continue&quot;,trigger:&quot;mouse&quot;,setup:mouseSetup},{name:&quot;keycontinue&quot;,flavour:&quot;continue&quot;,trigger:&quot;key&quot;,setup:keySetup},{name:&quot;cycle&quot;,flavour:&quot;cycle&quot;,trigger:&quot;revisemacro&quot;,setup:revisionSetup},{name:&quot;mousecycle&quot;,flavour:&quot;cycle&quot;,trigger:&quot;mouse&quot;,setup:mouseSetup},{name:&quot;timedcycle&quot;,flavour:&quot;cycle&quot;,trigger:&quot;time&quot;,setup:timeSetup},{name:&quot;keycycle&quot;,flavour:&quot;replace&quot;,trigger:&quot;key&quot;,setup:keySetup}].forEach(function(e){e.handler=revisionSpanHandler;\ne.shorthand=([&quot;link&quot;,&quot;mouse&quot;,&quot;hover&quot;].indexOf(e.trigger)&gt;-1);macros[e.name]=e;macros[&quot;end&quot;+e.name]=nullobj;begintags.push(e.name);\nendtags.push(&quot;end&quot;+e.name)});function insideDepartingSpan(elem){var r=elem.parentNode;while(!r.classList.contains(&quot;passage&quot;)){if(r.classList.contains(&quot;revision-span-out&quot;)){return true\n}r=r.parentNode}}function reviseAll(rt,rname){var rall=document.querySelectorAll(&quot;.passage [data-flavour].&quot;+rname),ret=false;\nfor(var i=0;i&lt;rall.length;i++){if(!insideDepartingSpan(rall[i])){ret=revise(rt,rall[i])||ret}}return ret}function revise(rt,r,notrans){var ind2,curr,next,ind=-1,rev=(rt==&quot;revert&quot;),rnd=(rt.indexOf(&quot;random&quot;)&gt;-1),fl=r.getAttribute(&quot;data-flavour&quot;),rc=r.childNodes,cyc=(fl==&quot;cycle&quot;),rcl=rc.length-1;\nfunction doToGainerSpans(n,fn){for(var k=n-1;k&gt;=0;k--){if(rc[k+1].classList.contains(&quot;gains&quot;)){fn(rc[k],notrans)}else{break\n}}}for(var k=0;k&lt;=rcl;k++){if(rc[k].getAttribute(&quot;data-enabled&quot;)==&quot;true&quot;){ind=k}}if(rev){ind-=1}curr=(ind&gt;=0?rc[ind]:(cyc?rc[rcl]:null));\nind2=ind;if(rnd){ind2=(ind+(Math.floor(Math.random()*rcl)))%rcl}next=((ind2&lt;rcl)?rc[ind2+1]:(cyc?rc[0]:null));var docurr=(rev?showVer:hideVer);\nvar donext=(rev?hideVer:showVer);var currfn=function(){if(!(next&&next.classList.contains(&quot;gains&quot;))||rnd){docurr(curr,notrans);\ndoToGainerSpans(ind,docurr,notrans)}};var nextfn=function(){donext(next,notrans);if(rnd){doToGainerSpans(ind2+1,donext,notrans)\n}};if(!rev){currfn();nextfn()}else{nextfn();currfn()}return(cyc?true:(rev?(ind&gt;0):(ind2&lt;rcl-1)))}macros.revert=macros.revise=macros.randomise=macros.randomize={handler:function(a,b,c){var l,rev,rname;\nfunction disableLink(l){l.style.display=&quot;none&quot;}function enableLink(l){l.style.display=&quot;inline&quot;}function updateLink(l){if(l.className.indexOf(&quot;random&quot;)&gt;-1){enableLink(l);\nreturn}var rall=document.querySelectorAll(&quot;.passage [data-flavour].&quot;+rname),cannext,canprev,i,ind,r,fl;for(i=0;i&lt;rall.length;\ni++){r=rall[i],fl=r.getAttribute(&quot;data-flavour&quot;);if(insideDepartingSpan(r)){continue}if(fl==&quot;cycle&quot;){cannext=canprev=true\n}else{if(r.firstChild.getAttribute(&quot;data-enabled&quot;)==!1+&quot;&quot;){canprev=true}if(r.lastChild.getAttribute(&quot;data-enabled&quot;)==!1+&quot;&quot;){cannext=true\n}}}var can=(l.classList.contains(&quot;revert&quot;)?canprev:cannext);(can?enableLink:disableLink)(l)}function toggleText(w){w.classList.toggle(rl+&quot;Enabled&quot;);\nw.classList.toggle(rl+&quot;Disabled&quot;);w.style.display=((w.style.display==&quot;none&quot;)?&quot;inline&quot;:&quot;none&quot;)}var rl=&quot;reviseLink&quot;;if(c.length&lt;2){throwError(a,b+&quot; macro needs 2 parameters&quot;);\nreturn}rname=c.shift().replace(&quot; &quot;,&quot;_&quot;);l=Wikifier.createInternalLink(a,null);l.className=&quot;internalLink &quot;+rl+&quot; &quot;+rl+&quot;_&quot;+rname+&quot; &quot;+b;\nvar v=&quot;&quot;;var end=false;var out=false;if(c.length&gt;1&&c[0][0]==&quot;$&quot;){v=c[0].slice(1);c.shift()}switch(c[c.length-1]){case&quot;end&quot;:end=true;\nc.pop();break;case&quot;out&quot;:out=true;c.pop();break}var h=state.history[0].variables;for(var i=0;i&lt;c.length;i++){var on=(i==Math.max(c.indexOf(h[v]),0));\nvar d=insertElement(null,&quot;span&quot;,null,rl+((on)?&quot;En&quot;:&quot;Dis&quot;)+&quot;abled&quot;);if(on){h[v]=c[i];l.setAttribute(&quot;data-cycle&quot;,i)}else{d.style.display=&quot;none&quot;\n}insertText(d,c[i]);l.appendChild(d)}l.onclick=function(){reviseAll(b,rname);var t=this.childNodes,u=this.getAttribute(&quot;data-cycle&quot;)-0,m=t.length,n,lall,i;\nif((end||out)&&u==m-(end?2:1)){if(end){n=this.removeChild(t[u+1]);n.className=rl+&quot;End&quot;;n.style.display=&quot;inline&quot;;this.parentNode.replaceChild(n,this)\n}else{this.parentNode.removeChild(this);return}}else{toggleText(t[u]);u=(u+1)%m;if(v){h[v]=c[u]}toggleText(t[u]);this.setAttribute(&quot;data-cycle&quot;,u)\n}lall=document.getElementsByClassName(rl+&quot;_&quot;+rname);for(i=0;i&lt;lall.length;i++){updateLink(lall[i])}};l=null}};macros.mouserevise=macros.hoverrevise={handler:function(a,b,c,d){var endtags=[&quot;end&quot;+b],evt=(window.onmouseenter===null?&quot;onmouseenter&quot;:&quot;onmouseover&quot;),t=tagcontents(d,[b],endtags,endtags,d.source.indexOf(&quot;&gt;&gt;&quot;,d.matchStart)+2);\nif(t){var rname=c[0].replace(&quot; &quot;,&quot;_&quot;),h=insertElement(a,&quot;span&quot;,null,&quot;hoverrevise hoverrevise_&quot;+rname),f=function(){var done=!reviseAll(&quot;revise&quot;,rname);\nif(b!=&quot;hoverrevise&quot;&&done){this[evt]=null}};new Wikifier(h,t[0]);if(b==&quot;hoverrevise&quot;){h.onmouseover=f;h.onmouseout=function(){reviseAll(&quot;revert&quot;,rname)\n}}else{h[evt]=f}h=null}}};macros.instantrevise={handler:function(a,b,c,d){reviseAll(&quot;revise&quot;,c[0].replace(&quot; &quot;,&quot;_&quot;))}};macros.endmouserevise=nullobj;\nmacros.endhoverrevise=nullobj}());</div><div tiddler="CSS pour cacher le titre" tags="stylesheet titre-caché" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">#title{\n\tdisplay:none;\n}</div><div tiddler="StoryTitle" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">Faux Espoirs</div><div tiddler="init lPostes" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">&lt;&lt;set $lPostes = [ &quot;Analyste de jeu&quot;, &quot;Assurance Qualité&quot;, &quot;Concepteur&quot;, &quot;Concepteur senior&quot;, &quot;Concepteur de niveaux&quot;, &quot;Concepteur de niveaux senior&quot;, &quot;Designer&quot;, &quot;Lead Designer&quot;, &quot;Designer senior&quot;, &quot;Designer gameplay&quot;, &quot;Développement et Contrôle Qualité&quot;, &quot;Level designer&quot;, &quot;Level designer senior&quot;, &quot;Lead Level designer&quot;, &quot;Observateur&quot;, &quot;Programmeur&quot;, &quot;Programmeur Analyste&quot;, &quot;Scénariste&quot;, &quot;Testeur&quot;]&gt;&gt;</div><div tiddler="init lDescriptions" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">&lt;&lt;set $lDescriptions = [ &quot;Identifier les sources d’informations pertinentes pour la collecte de données, effectuer la saisie et vérifier la qualité des données et des résultats;&quot;, &quot;Communiquer la synthèse des données en faisant ressortir les informations prioritaires et pertinentes à la prise de décision;&quot;, &quot;Développer des plans d’action et travailler avec les équipes respectives pour mettre en place les recommandations identifiées et faire le suivi;&quot;, &quot;Identifier, publier et améliorer continuellement le développement et la communication d’indicateurs de performances clés (KPIs) et d’autres analyses;&quot;, &quot;Rédiger des rapports et préparer des tableaux de bords;&quot;, &quot;Créer de nouveaux processus et automatiser, standardiser et optimiser les processus existants;&quot;, &quot;Développer des modèles d’analyse pour tester différents scénarios afin d’en tirer des recommandations à mettre en place;&quot;, &quot;Collaborer avec différents intervenants (Gestionnaires de communauté, Marketing, Monétisation, Production, Opérations techniques) pour supporter la prise de décision et pour guider les actions stratégiques du studio en apportant une logique quantitative pour différentes décisions possibles;&quot;, &quot;Effectuer toutes autres tâches connexes.&quot;, &quot;2-5 années d’expérience dans un poste similaire, ou toute autre expérience pertinente;&quot;, &quot;Expérience dans le jeu vidéo, un atout.&quot;, &quot;Avoir une pensée structurée, stratégique et rigoureuse;&quot;, &quot;Avoir une forte capacité en résolution de problèmes;&quot;, &quot;Savoir développer et entretenir des relations interdépartementales et communiquer avec tous les niveaux hiérarchiques;&quot;, &quot;Savoir concilier les points de vues techniques et d’affaires;&quot;, &quot;Proactivité et innovation;&quot;, &quot;Autonomie et entrepreneuriat;&quot;, &quot;Connaissance éprouvée d’outils, de logiciels et de systèmes d’analyse de données (Excel, SQL Server, Tableau);&quot;, &quot;Aptitudes à la communication verbale et écrite en français et en anglais.&quot;, &quot;Créer la vision Level Design en s’inspirant de la direction créative, de sources externes (film de références, jeux concurrents et documents design), en organisant des briefing s de missions et en étant sensible à la qualité de l’intégration des données dans le moteur.&quot;, &quot;Élaborer la progression du jeu ( Rational Level Design ) avec l’aide du Game Design en s’assurant qu’une fois établie, elle est bien communiquée au joueur à travers l’histoire, les missions et les tutoriaux.&quot;, &quot;Communiquer les attentes de la vision Level Design à son équipe au niveau qualité et contenu à l’aide de documents décrivant l’expérience gameplay tout en s’assurant qu’elle soit bien comprise.&quot;, &quot;Valider le travail effectué par son équipe afin que les objectifs de qualité soient respectés et que les éléments produits soient en ligne avec la vision Level Design du jeu. Ceci est accompli, entre autres, par la tenue de revues itératives servant à tester l’expérience du joueur.&quot;, &quot;S’assurer que la ligne directrice Level Design est suivie en collaborant étroitement avec le Chef de projet (CP), les Directeurs et les Directeurs Techniques (DT) Level Design.&quot;, &quot;Évaluer les changements au jeu suite au feedback des playtests, de l’éditorial ou du marketing en proposant des solutions aux problèmes tout maintenant l’intégrité de la vision Level Design.&quot;, &quot;Contribuer à la planification du travail , en collaboration avec le responsable de la planification, en agissant comme expert contenu ;   le but étant d’établir un compromis entre la qualité souhaitée et la capacité de livraison (temps, coût, ressources, etc.)&quot;, &quot;Effectuer toutes autres tâches connexes&quot;, &quot;AEC en Design de jeu ou toutes autres formations équivalentes.&quot;, &quot;Minimum de 5 années d’expérience dans le jeu vidéo ou toutes autres expériences pertinentes.&quot;, &quot;Expérience dans son métier à toutes les étapes d’une production de jeu.&quot;, &quot;Expérience comme Chef d’équipe ou Chef de projet est un atout&quot;, &quot;Faire preuve de créativité&quot;, &quot;Savoir communiquer une vision&quot;, &quot;Démontrer de bonnes habiletés de   communication interpersonnelle&quot;, &quot;Faire preuve de perspective&quot;, &quot;Gérer l’innovation&quot;, &quot;Être orienté vers le client/l’utilisateur&quot;, &quot;Se sentir à l’aise dans les rapports avec la haute direction&quot;, &quot;-Comprendre les intentions du directeur créatif afin mettre en mot sa vision&quot;, &quot;-Écrire le scénario pour donner une référence à tous les corps de métiers&quot;, &quot;-Détailler l'histoire globale en storyline afin d’inclure chaque décision possible pouvant être pris par le joueur&quot;, &quot;-Élaborer une description des personnages du jeu&quot;, &quot;-Décrire les lieux, ambiances, atmosphères&quot;, &quot;-Structurer les dialogues par rapport aux événements&quot;, &quot;-Écrire le scénario des cinématiques&quot;, &quot;-Écrire les autres textes du jeu (menus, affichage…)&quot;, &quot;-Travailler en étroite collaboration avec les responsables du design narratif&quot;, &quot;-Veiller à la mise à jour des documents de références&quot;, &quot;-Collaborer à la supervision du scénario, avec l’équipe de réalisation des scripted events&quot;, &quot;-Effectuer toutes autres tâches connexes&quot;, &quot;-DEC en lettres ou toutes autres formations équivalentes.&quot;, &quot;-Minimum de 1 à 3 ans d’expérience en scénarisation ou toutes autres expériences pertinentes.&quot;, &quot; -Sens de l’organisation&quot;, &quot;-S’inspiré des gens, de la société et le monde en général&quot;, &quot;-Curiosité&quot;, &quot;-Créativité&quot;, &quot;-Sens de l’observation&quot;, &quot;Participer à la conception du contenu en collaboration étroite avec l’équipe créative&quot;, &quot;Participer à la création et aider à prototyper des mécaniques robustes, accessibles et profondes&quot;, &quot;Participer à la rédaction des documents de design pour l’équipe design comme pour les équipes techniques&quot;, &quot;Encadrer l’équipe de Game designers (gestion et coordination des plannings,…)&quot;, &quot;Construire des plans d’actions après feedbacks de la direction et analyse des résultats de playtest&quot;, &quot;  Vous disposez d’une expérience sur une production aboutie en tant que Lead GD sur un jeu AAA&quot;, &quot;  Vous êtes capable de modéliser en schéma des comportements et des situations de jeu&quot;, &quot;  Curieux et analytique, vous êtes au fait des nouveaux développements et nouvelles tendances et saurez être force de proposition en vous adaptant toujours aux attentes du consommateur.&quot;, &quot;  Disposant d'un excellent relationnel, vous faites preuve de rigueur et d’autonomie et savez vous remettre en question.&quot;, &quot;  Vous avez une excellente connaissance des jeux vidéo et vision orientée consommateur&quot;, &quot;  La maitrise des process et outils de Prototypage (type Flash, Unity, UDK, GameMaker, etc) est un plus.&quot;, &quot;de faire la mise en application de différents outils et de scripts relatifs aux paramètres d’automatisation de tests initiaux et finaux pour diverses composantes de jeu. Les tests effectués se trouveront principalement dans les catégories suivantes :&quot;, &quot;o Répartition de charge&quot;, &quot;o Intégrité de la base de données&quot;, &quot;o Éxtensibilité de la base de données&quot;, &quot;o Tests de charge (Test d’endurance, test de résistance)&quot;, &quot;o Tests de sites Web&quot;, &quot;o Tests d’outils administratifs liés au produit&quot;, &quot;o Application frontale (mécanisme de mise-à-jour progressive etc.)&quot;, &quot;de recueillir des mesures, de déceler et d’analyser des erreurs dans différents journaux d’exploitation des composantes et les transmettre à l’équipe d’infrastructure en ligne;&quot;, &quot;d’évaluer les scénarios d’essai et les listes de vérification existants et de créer des scripts d’automatisation pour la majorité des scénarios d’essai, lorsque cela est possible;&quot;, &quot;d’améliorer les procédés et les stratégies de test dans leur ensemble;&quot;, &quot; de créer une documentation claire sur la description des différents outils et scripts pour que les testeurs les exécutent avec un temps système de communication minimal;&quot;, &quot;d’effectuer toutes autres tâches connexes.&quot;, &quot;Un diplôme collégial (DEC) en informatique est un atout .&quot;, &quot;Expérience dans un poste semblable exigée (dépannage informatique, tests)&quot;, &quot;Expérience de rédaction de scénarios en modes BlackBox et WhiteBox&quot;, &quot;Expérience sur les plates-formes Windows et Linux (interfaces utilisateur graphique [GUI] et interpréteurs de commandes)&quot;, &quot;Expérience avec les requêtes et les schémas (types de base de données SQL et non-SQL)&quot;, &quot;Fortes connaissances pratiques des technologies Web et des protocoles (IIS, Apache, HTML, json, HTTP, php, XML, Ajax)&quot;, &quot;Bonne connaissance des outils de test de répartition de charge (JMeter, WCAT, etc.)&quot;, &quot;Bonne connaissance du langage de script JavaScript&quot;, &quot;Bonne connaissance de l’infrastructure de nuage en tant que service et hébergement Web&quot;, &quot;Connaissance d’autres langages de script (Python, Ruby, Bash, etc.)&quot;, &quot;Compréhension du pipeline et des outils de production&quot;, &quot;Rigoureux et méthodique&quot;, &quot;Proactif, autonome et débrouillard&quot;, &quot;Solides compétences en communication interpersonnelle et leadership&quot;, &quot;-Titulaire d’un baccalauréat en informatique ou génie informatique&quot;, &quot;-Vous avez de 3 à 5 ans d’expérience en programmation langage C/C++ et en optimisation&quot;, &quot;-De plus, vous avez une expérience d’au moins 1 an pour un jeu vidéo en tant que programmeur en mécanismes de jeux («gameplay») ou I.A.. Il est donc essentiel d’avoir une bonne connaissance des processus d’élaboration de parcours de jeux («path finding »)&quot;, &quot;-La connaissance de la conception orientée en objet (UML), du logiciel 3DSMax, ainsi que de bonnes aptitudes mathématiques serait un atout&quot;, &quot;-Expérience établie en mécanisme de jeux, en AI et en conception (perso ppal, caméra, ennemis, environnement, interface)&quot;, &quot;-Capacité à communiquer avec tous les corps de métiers et, à tirer une équipe de programmeurs vers le haut en termes de qualité et de service à la vision du jeu&quot;, &quot;-Expérience sur les consoles nouvelle génération (PS3, XBox360 ou Wii) souhaitée&quot;, &quot;-Passion du jeu vidéo et désir de travailler tout en ayant du plaisir!&quot;, &quot;-Programmer de façon claire et structurée tout en étant conscient des requis de performance, de maintenance, de modularité, d’extensibilité et de compatibilité.&quot;, &quot;-Analyser les fonctionnalités existantes d’un système et voir si elles conviennent aux intentions.&quot;, &quot;-Proposer des améliorations au besoin en concevant, en implantant de nouveaux systèmes ou en améliorant des systèmes existants.&quot;, &quot;-Développer les systèmes génériques qui viendront soutenir les fonctionnalités des programmeurs spécialistes (AI, 3D, physique, son, animation, etc.) et faciliter leur intégration (moteur, éditeur ou middleware ).&quot;, &quot;-Produire des designs techniques pour subvenir aux besoins d’un système, quand c’est nécessaire.&quot;, &quot;-Supporter les fonctionnalités et les systèmes conçus.&quot;, &quot;-Déterminer et corriger les « bugs » identifiés par les autres métiers et l’équipe de contrôle qualité.&quot;, &quot;-Documenter son travail afin de transférer ses connaissances et permettre aux utilisateurs de comprendre comment utiliser les nouveaux systèmes et fonctionnalités.&quot;, &quot;-Effectuer toutes autres tâches connexes.&quot;, &quot;Baccalauréat en informatique ou génie informatique ou toutes autres formations équivalentes.&quot;, &quot;Minimum de 1 à 3 ans d’expérience en programmation de logiciel, idéalement dans le domaine du jeu vidéo ou toutes autres expériences pertinentes.&quot;, &quot;-Expert en C++&quot;, &quot;-Avoir un bon esprit d’analyse et de synthèse&quot;, &quot;-Capacité à anticiper et résoudre des problèmes&quot;, &quot;-Être autonome et débrouillard&quot;, &quot;-Avoir le sens du détail&quot;, &quot;-Être souple dans l’organisation de son travail&quot;, &quot;-Avoir de bonnes habiletés relationnelles et de communication&quot;, &quot;-Capable de travailler en équipe&quot;, &quot;-Capable de s’adapter aux changements&quot;, &quot;-Être orienté résultat&quot;, &quot;-Être capable de se familiariser avec de nouveaux outils rapidement.&quot;, &quot;Participez à la réalisation des intentions du Creative Director et du Game Director&quot;, &quot;Etes le garant de l'intégration des acteurs et des ingrédients de jeu dans les niveaux, en respectant les contraintes Game Design et Gameplay Programming&quot;, &quot;-Vous participez à l’implémentation des éléments liés au scénario et à la mise en scène&quot;, &quot;-Enfin, vous êtes en charge de la construction de système de jeu.&quot;, &quot;Vous disposez d'une expérience confirmée sur un même poste sur des jeux AAA, et avez une bonne connaissance des outils utilisés dans la production de jeux vidéo.&quot;, &quot;Vous faites preuve d’une grande capacité d’analyse et de synthèse, d’adaptation et de communication vous permettant de travailler avec tous les corps de métier.&quot;, &quot;Vous avez de grandes qualités relationnelles et organisationnelles. Vous êtes à l'aise en anglais, à l'écrit comme à l'oral.&quot;, &quot;Vous connaissez les contraintes techniques de programmation (fonctionnalité 3C, IA…) et graphique (affichage,…) d'un moteur.&quot;, &quot;Développer des applications en C# et/ou C++.&quot;, &quot;Participer à l'architecture, l’analyse et la conception d'outils.&quot;, &quot;Estimer les efforts liés aux activités de développement de logiciel&quot;, &quot;Créer des tests unitaires et des tests d'intégration.&quot;, &quot;Optimiser le code.&quot;, &quot;Rédiger des rapports techniques et de la documentation.&quot;, &quot;Supporter les utilisateurs, répondre à leurs questions et proposer des stratégies et des solutions techniques.&quot;, &quot;BS dans une discipline d'ingénierie, d’informatique ou d’un diplôme équivalent.&quot;, &quot;Plus de 5 ans d'expérience dans le développement des jeux/applications mobiles et/ou plateformes/outils.&quot;, &quot;Très bonne connaissance du langage C#, C++ et de la conception/design orientés objet.&quot;, &quot;Expérience dans un des secteurs suivants :Plateforme de development.&quot;, &quot;Éditeur d'animation 2D/3D.&quot;, &quot;Éditeur d’état machine et autre éditeur logique.&quot;, &quot;Environnement de développement modulaire.&quot;, &quot;RAD ou ARAD&quot;, &quot;Développement d'applications WYSIWYG&quot;, &quot;Expérience dans le développement d'application de desktop.&quot;, &quot;Doit se concentrer sur la qualité à toutes les étapes d'une tâche.&quot;, &quot;Capacité de communiquer avec une équipe multidisciplinaire.&quot;, &quot;Forte capacité à analyser et à résoudre des problèmes.&quot;, &quot;Capacité de détecter des problèmes et des mauvaises pratiques par des revues de code/conception et suggérer des améliorations.&quot;, &quot;Démontre des attitudes de joueur dans une équipe multidisciplinaire.&quot;, &quot;Connaissance et expérience de l'élaboration d'outils utilisant Windows Presentation Foundation (WPF) est un atout.&quot;, &quot;Expérience avec une plateforme mobile (Android Native, iOS, QNX, WP7) est un atout.&quot;, &quot;être responsable de bâtir des solutions client/serveur qui intègrent les téléphones intelligents, les jeux vidéo de franchise et les sites Web communautaires;&quot;, &quot;travailler au développement et à l’intégration de l’interface API côté client;&quot;, &quot;travailler avec l’équipe d’ingénierie des services connectés pour livrer et maintenir des systèmes d’arrière-plan capables d’offrir la performance et l’extensibilité requises au déploiement localisé à l’échelle mondiale;&quot;, &quot;contribuer à la portée, à la conception, à l’élaboration et au maintien de services de jeu en réseau pour la prochaine génération de jeux Allplay;&quot;, &quot;collaborer avec les développeurs pour établir la portée, concevoir et tester les caractéristiques de jeu en réseau;&quot;, &quot;travailler avec les TI pour garantir le rendement et la fiabilité du service à l’échelle mondiale.&quot;, &quot;Au moins 3 à 5 ans d’expérience en développement Java/J2EE côté serveur&quot;, &quot;Au moins 3 ans d’expérience de codage en C++&quot;, &quot;Au moins 3 à 5 ans d’expérience avec les bases de données utilisant SQL ou Hibernate. Expérience avec Oracle ou MySQL recherchée&quot;, &quot;Expérience du développement multiplateforme (PC, Linux, Unix)&quot;, &quot;Expérience avec les technologies sans fil et les appareils mobiles&quot;, &quot;Expérience recherchée en conception d’architectures serveurs multiniveaux et de base de données robustes extensibles. Connaissance des technologies de mise en cache côté serveur comme les techniques memcached et sharding. P. ex. : MySQL ou NoSQL, Memcache, Jboss/Apache&quot;, &quot;Excellentes compétences avec SQL (en cas d’utilisation de MySQL)&quot;, &quot;Architecture de système distribuée&quot;, &quot;Connaissance de la réserve de connexions serveur et client&quot;, &quot;Exposition à l’infonuagique comme Amazon EC2 et GAE&quot;, &quot;Compréhension de la programmation de service Web, comme le développement REST API, une compétence intéressante&quot;, &quot;Bonne connaissance de Datastore&quot;, &quot;Test de chargement, p. ex., générer des scripts de test de chargement, Jmeter (ou autre logiciel de test de chargement)&quot;, &quot;Profilage de code (pouvoir cibler les congestions de code en temps réel)&quot;, &quot;Expérience de principes à toutes les étapes du cycle de développement de produits, y compris la définition des exigences, les spécifications, le développement, les tests, le lancement et l’ingénierie de soutien&quot;, &quot;Compétences exceptionnelles en résolution de problèmes analytique et créative; accent sur la solution&quot;, &quot;Bonnes compétences orales et écrites en anglais&quot;, &quot;Expérience dans l’industrie du jeu&quot;, &quot;Expérience avec les méthodologies de développent Agile (Scrum)&quot;, &quot;Exposition à OAuth et Facebook API un atout&quot;, &quot; Posséder au moins cinq ans d’expérience dans l’industrie du jeu vidéo et minimum d’un titre de jeu AAA à titre de rédacteur principal;&quot;, &quot;- Capacité d’interpréter et de concrétiser l’idée du concepteur en chef, du directeur artistique et des producteurs exécutifs et de la communiquer aux autres membres de l’équipe; préserver la vision narrative initiale du projet;&quot;, &quot;- Travailler en collaboration avec les équipes des arts, de la jouabilité et de la cinématique;&quot;, &quot;- Posséder d’excellentes habilités pour raconter des histoires, écrire des scénarios, trouver la voix des personnages et préserver l'uniformité tout au long du projet;&quot;, &quot;- Amorcer la critique du travail des équipes de rédaction tout au long du projet;&quot;, &quot;- Jouer le rôle de point de contact du projet en matière de rédaction, en ce qui a trait à l’exécution technique et à la cohésion du projet;&quot;, &quot;- Créer et comprendre les pipelines et les flux de travaux de rédaction et être en mesure de les modifier et de les améliorer;&quot;, &quot;- Tester le jeu et contribuer à régler de manière proactive les points qui ne fonctionnent pas;&quot;, &quot;- Anticiper les besoins de son équipe de rédaction;&quot;, &quot;- Avoir le souci du détail et le sens de l’organisation en ce qui a trait aux tâches, aux dossiers et à l'archivage, et aider son équipe à faire de même;&quot;, &quot;- Faire preuve d’enthousiasme et accepter de relever les défis.&quot;, &quot;- Fournir des exemples de rédaction (textes de nature personnelle ou professionnelle) et réussir un test de rédaction.&quot;, &quot;- Participer au design et à l'architecture du programme&quot;, &quot;- Faire le design et la programmation des systèmes du jeu&quot;, &quot;- Aider à établir le calendrier des activités de programmation sur le projet et compléter les tâches de programmation en respectant le calendrier&quot;, &quot;- Baccalauréat en sciences de l'informatique, mathématiques, ingénierie ou expérience équivalente&quot;, &quot;- 2-5 années d'expérience en tant que programmeur de jeu&quot;, &quot;- Expérience professionnelle en développement de logiciel&quot;, &quot;- Excellente connaissance de C++&quot;, &quot;- Connaissance démontrée des pratiques d'ingénierie de logiciel&quot;, &quot;- Excellentes aptitudes en communication et en relations interpersonnelles&quot;, &quot;- Attitude positive et habileté à donner et recevoir des critiques constructives&quot;, &quot;- Intérêt dans l'avancement de la fine pointe de la technologie des jeux et des méthodologies de développement&quot;, &quot;- Expérience dans l'industrie du jeu&quot;, &quot;- Connaissance de Python&quot;, &quot;- Compréhension du développement multiplateforme&quot;, &quot;Créatif&quot;, &quot;Collaboratif&quot;, &quot;Déterminé face aux résultats&quot;, &quot;Confiant&quot;, &quot;L'utilisation du genre masculin inclus aussi le genre féminin et n'a été utilisé que par soucis d'alléger le texte.&quot;, &quot;S'assurer que nos jeux rencontrent de très hautes normes de qualités sur toutes les plateformes supportées.&quot;, &quot;Aptitude à effectuer des tests concernant la plate-forme et les exigences internes de cas de test.&quot;, &quot;Tester des fonctionnalités et des caractéristiques multi-plateformes telles que: l'intégration de Facebook et la progression de l'utilisateur.&quot;, &quot;Appliquer les procédures de tests et se concentrer sur les détails de conception de jeux.&quot;, &quot;Fournir des résultats à l'aide de rapports détaillés et bien documentés.&quot;, &quot;Participer à l'amélioration continue du QA en fournissant une rétroaction aux leads et aux gestionnaires.&quot;, &quot;Minimum 2 ans d'expérience en assurance qualité.&quot;, &quot;Au minimum 1 an d'expérience en certification.&quot;, &quot;Diplôme d'études secondaires ou expérience de travail équivalente.&quot;, &quot;Connaissances des pratiques de testing online et social&quot;, &quot;Expérience de testing sur les plateformes iOS, Google Play (Android), Amazon (Android) et Facebook.&quot;, &quot;Excellente capacité d'écriture en français et en anglais.&quot;, &quot;Capacité à travailler sous pression, à être dirigé dans son travail et à gérer plusieurs tâches.&quot;, &quot;Engagé, autonome et responsable.&quot;, &quot;Posséder une attitude positive et avoir une capacité à donner et recevoir des critiques constructives.&quot;, &quot;Excellente capacité de résolution de problème, de communication interpersonnelle et de minutie sont des atouts importants&quot;, &quot;Une bonne connaissance de:&quot;, &quot;o les plates-formes Windows et Macintosh.&quot;, &quot;o les applications Microsoft Office.&quot;, &quot;SCRUM (Agile) l'expérience est un bonus.&quot;, &quot;Expérience sur toutes les plate-formes&quot;, &quot;La connaissance des langues étrangères est un bonus.&quot;, &quot;Responsible for working closely with Project Managers, Developers, Artists, Testing to deliver game updates on schedule&quot;, &quot;Responsible for working with Analytics and Data Analysts to design and prototype new features to go into our games&quot;, &quot;Manage and maintain all design aspects of a game-as-service through entire project life cycle.&quot;, &quot;Create innovative and engaging designs and prototypes while maintaining XMG’s high standard of quality&quot;, &quot;Balance game resources and economy within the core, social meta-game and monetization model daily.&quot;, &quot;Communicate game design clearly and concisely with team and throughout worldwide studio.&quot;, &quot;Inspire game team through progressive, creative design and leadership.&quot;, &quot;Provide and receive critique in a constructive manner with suggestions and solutions for improvement.&quot;, &quot;Remain current on industry trends including: new game genres, new game design methods and emerging platforms.&quot;, &quot;Requirements&quot;, &quot;2+ year's industry experience in a social, mobile or console game design position&quot;, &quot;Proven ability to conceptualize, create and implement game concepts using various tools and technologies.&quot;, &quot;Broad knowledge of, and passion for, the casual and classic arcade/simulation game genres.&quot;, &quot;Interest in new monetization and business models as they relate to game design.&quot;, &quot;Excellent creative, analytical and organizational skills with proven ability to write, communicate and maintain detailed design documentation throughout project life cycle.&quot;, &quot;Demonstrative proof of an open-minded, progressive thinker who is flexible, energetic and driven with the ability to overcome obstacles and challenges with working solutions.&quot;, &quot;Bachelor's Degree or equivalent preferred but not required&quot;, &quot;Experience: 3 years to less than 5 years&quot;, &quot;Études : Diplôme d'études secondaires, Études de niveau collégial ou de niveau cégep en cours ou non complétées/formation professionnelle en cours ou non complétée&quot;, &quot;Titres de compétence (certificats, permis, affiliations, cours, etc.) : Non requis&quot;, &quot;Expérience : 3 ans à moins de 5 ans&quot;, &quot;Langues : Parler en anglais, Lire en anglais, Écrire en anglais&quot;, &quot;Domaine de spécialisation en graphisme : Arts visuels, Dessin d'animation, Emballage de produits, Multimédia&quot;, &quot;Milieu de travail : Firme&quot;, &quot;Genre d'illustration technique : Logiciels&quot;, &quot;Compétences particulières : Consulter les clients pour déterminer la nature et le contenu des dessins et des illustrations à reproduire, Préparer les spécifications des dessins, Produire la forme finale des illustrations&quot;, &quot;Échantillons de travail : Portfolio, URL de site Web, Document publié, Échantillon de design, Exemple de travail complété&quot;, &quot;Conditions de travail et capacités physiques : Milieu où les activités se déroulent à un rythme rapide, Travailler sous pression, Attention portée au détail, Distinction des couleurs, Assis&quot;, &quot;Environnement de milieu de travail : Non-fumeurs, Climatisé&quot;, &quot;Information sur le lieu de travail : Milieu urbain&quot;, &quot;Compétences essentielles : Lecture de textes, Utilisation des documents, Rédaction, Communication verbale, Travail d'équipe, Résolution de problèmes, Prise de décision , Pensée critique, Planification et organisation du travail, Utilisation particulière de la mémoire, Recherche de renseignements, Informatique, Formation continue&quot;, &quot;Conditions d'emploi : Permanent, Plein temps, Jour&quot;, &quot;Salaire : 75,000.00 à 80,000.00 Par année pour 40 heures par semaine, Prime, Autres avantages&quot;, &quot;Date prévue de début : Dès que possible&quot;, &quot;Lieu de l'emploi : Edmonton South, Alberta (1 poste disponible)&quot;, &quot;Études : Diplôme d'études secondaires, Études de niveau universitaire complétées&quot;, &quot;Titres de compétence (certificats, permis, affiliations, cours, etc.) : Ne s'applique pas&quot;, &quot;Expérience : 5 ans ou plus&quot;, &quot;Langues : Parler en anglais, Lire en anglais, Écrire en anglais&quot;, &quot;Domaine de spécialisation en graphisme : Graphisme en général, Multimédia&quot;, &quot;Milieu de travail : Firme&quot;, &quot;Genre d'illustration technique : Logiciels&quot;, &quot;Compétences particulières : Consulter les clients pour déterminer la nature et le contenu des dessins et des illustrations à reproduire, Préparer les spécifications des dessins, Produire la forme finale des illustrations&quot;, &quot;Compétences essentielles : Lecture de textes, Utilisation des documents, Calcul, Rédaction, Communication verbale, Travail d'équipe, Résolution de problèmes, Prise de décision , Pensée critique, Planification et organisation du travail, Utilisation particulière de la mémoire, Recherche de renseignements, Informatique, Formation continue&quot;, &quot;concevoir les niveaux et le déroulement de jeux vidéo ainsi que calibrer l’expérience du joueur dans ceux-ci;&quot;, &quot;analyser et adapter des concepts pour les restrictions des plateformes IFE;&quot;, &quot;participer aux rencontres de remue-méninges;&quot;, &quot;tester les jeux en cours de production;&quot;, &quot;participer à définir les règles des jeux et de leur économie;&quot;, &quot;participer à définir les commandes de jeu et d’interface;&quot;, &quot;rédiger les documents requis;&quot;, &quot;effectuer le suivi des projets avec tous les membres de l’équipe;&quot;, &quot;mettre à jour continuellement les documents.&quot;, &quot;Formation collégiale ou universitaire dans un domaine pertinent (conception de jeux vidéo, cinéma ou autre)&quot;, &quot;3 ans d’expérience en conception de jeux vidéo mobiles (style casual games)&quot;, &quot;Capacité à travailler avec des contraintes spécifiques liées à des limitations technologiques&quot;, &quot;Connaissance de Microsoft Office (Word, PowerPoint, Excel), Visio et Photoshop&quot;, &quot;Connaissance d’un logiciel de modélisation (3ds Max) un atout&quot;, &quot;Connaissance du domaine du divertissement en vol un atout&quot;, &quot;Bilinguisme fonctionnel (anglais et français) à l’oral et à l’écrit&quot;, &quot;Facilité à communiquer&quot;, &quot;Diplomatie marquée&quot;, &quot;Esprit d’analyse aiguisé&quot;, &quot;Esprit d’équipe&quot;, &quot;Forte créativité&quot;, &quot;Autonomie&quot;, &quot;Maîtrise de Photoshop;&quot;, &quot;Fortes compétences en illustration, en design sophistiqué et en typographie.&quot;, &quot;Spécialisé en graphisme haute résolution pour consoles nouvelle génération&quot;, &quot;Connaissance du graphisme 3D&quot;, &quot;Expérience avec Flash et Motion Graphics serait un atout.&quot;, &quot;Doit posséder d’excellentes habiletés interpersonnelles pour communiquer efficacement et contribuer à l’esprit d’équipe.&quot;, &quot;Compréhension nuancée de la conception d’interfaces utilisateur.&quot;, &quot;Familier avec les tendances.&quot;, &quot;Flexibilité artistique, capacité d’adaptation&quot;, &quot;Sens pratique, motivé et proactif.&quot;, &quot;Capacité à travailler sous pression.&quot;, &quot;Doit avoir une passion immense pour les jeux vidéo.&quot;, &quot;Doit fournir un solide portfolio qui contient des exemples d’illustrations et de graphismes pertinents.&quot;]&gt;&gt;</div><div tiddler="Soumettre votre candidature" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">Ta candidature et ta super lettre de présentation sont envoyés. Y'a plus qu'à espérer une recevoir rapidement une réponse!\n\nRating: &lt;&lt;print either(&quot;E&quot;, &quot;D-&quot;, &quot;D&quot;, &quot;D+&quot;, &quot;C-&quot;, &quot;C&quot;, &quot;C+&quot;, &quot;B-&quot;)&gt;&gt; &lt;&lt;replace&gt;&gt;(?)&lt;&lt;becomes&gt;&gt;\nLa note est calculée selon plusieurs facteurs, le plus important étant le lien entre ta lettre de présentation et le poste annoncé. &lt;&lt;endreplace&gt;&gt;\n\n&lt;&lt;if visited() neq 3&gt;&gt;[[Continuer|1 semaine passe]]&lt;&lt;else&gt;&gt;[[Continuer|créer mot de passe]]&lt;&lt;endif&gt;&gt;</div><div tiddler="Accueil site emplois" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">!!!Bienvenue sur le site de Emplois 1000!\n\n[img[images/workplace.jpg]]\n\n&lt;&lt;once&gt;&gt;Trouvez l'emploi de vos rêves ''RAPIDEMENT!!''\n\n[[Login|Entrer nom]]\n&lt;&lt;endonce&gt;&gt;\s\n&lt;&lt;later&gt;&gt;\s\n[[Recherche par studio|Recherche dans un studio spécifique]]\n\n&lt;&lt;gains&gt;&gt;&lt;&lt;gains&gt;&gt;[[Recherche dans tous les studios]]\n&lt;&lt;endlater&gt;&gt;\n\n&lt;&lt;set $resultatDejaVu = false&gt;&gt;</div><div tiddler="remplacer par studio spécifique" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">&lt;&lt;display &quot;Recherche dans tous les studios&quot;&gt;&gt;\n&lt;&lt;set $offres[0][1] = $studioRemplaçant&gt;&gt;\n&lt;&lt;set $offres[1][1] = $studioRemplaçant&gt;&gt;\n&lt;&lt;set $offres[2][1] = $studioRemplaçant&gt;&gt;\n&lt;&lt;set $offres[3][1] = $studioRemplaçant&gt;&gt;\n&lt;&lt;set $offres[4][1] = $studioRemplaçant&gt;&gt;</div><div tiddler="tests de macro replace etc" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">&lt;&lt;cycle partie1&gt;&gt;\n&lt;&lt;print $lPostes[0]&gt;&gt;\n&lt;&lt;becomes&gt;&gt;\n&lt;&lt;print $lPostes[1]&gt;&gt;\n&lt;&lt;becomes&gt;&gt;\n&lt;&lt;print $lPostes[2]&gt;&gt;\n&lt;&lt;becomes&gt;&gt;\n4\n&lt;&lt;becomes&gt;&gt;\n5\n&lt;&lt;endcycle&gt;&gt;&lt;&lt;revise partie1 &quot;changer&quot;&gt;&gt;\n\n\n[[Retour à Tests|test]]</div><div tiddler="réduire tableau" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">&lt;&lt;if $tableauARéduire.length gt $réduction&gt;&gt;\n\t&lt;&lt;set $tableauARéduire.splice(Math.floor(Math.random()*$tableauARéduire.length),1)&gt;&gt;\n\t&lt;&lt;display &quot;réduire tableau&quot;&gt;&gt;\n&lt;&lt;endif&gt;&gt;</div><div tiddler="Ah..." tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">Bon... c'était juste un accusé de réception.\n\nSérieux, ça devrait s'appeller un accusé de //déception!//\n\nOuain... :(\n\npffff...\n\n[[Level up...|Level up!]]</div><div tiddler="test either" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">&lt;&lt;print either(1,2,3)&gt;&gt;</div><div tiddler="tests de input" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">Nom actuel: &lt;&lt;print $nom&gt;&gt;\nNom complet: &lt;&lt;textinput $nom [[ok|confirmer]]&gt;&gt;\n\n[[cancel|Start]]</div><div tiddler="StoryMenu" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">[[raccourcis]]\n[[Debug]]\n[[Crédits]]</div><div tiddler="Postuler" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">&lt;div id=&quot;sectionGauche&quot;&gt;''&lt;&lt;print $offres[$numero][0]&gt;&gt; chez &lt;&lt;print $offres[$numero][1]&gt;&gt;''\n*&lt;&lt;print $offres[$numero][2]&gt;&gt;\n*&lt;&lt;print $offres[$numero][3]&gt;&gt;\n*&lt;&lt;print $offres[$numero][4]&gt;&gt;\n*&lt;&lt;print $offres[$numero][5]&gt;&gt;\n*&lt;&lt;print $offres[$numero][6]&gt;&gt;\n\nNuméro de l'annonce: &lt;&lt;print either(&quot;HW&quot;, &quot;IG&quot;, &quot;HQ&quot;, &quot;VU&quot;, &quot;OA&quot;, &quot;OI&quot;, &quot;PE&quot;, &quot;PC&quot;, &quot;RQ&quot;, &quot;RR&quot;, &quot;FH&quot;)&gt;&gt;&lt;&lt;print Math.floor(Math.random()*1000000)&gt;&gt;.\n&lt;/div&gt;\n&lt;div id=&quot;sectionDroite&quot;&gt;Pour postuler, attachez votre CV et rédigez votre lettre de présentation.\n\nVotre CV: &lt;&lt;replace&gt;&gt;Attachez votre CV&lt;&lt;becomes&gt;&gt;''CV - &lt;&lt;print $nom&gt;&gt;.doc''&lt;&lt;endreplace&gt;&gt;\n\n&lt;&lt;replace&gt;&gt;Rédiger votre lettre de présentation&lt;&lt;becomes&gt;&gt;\nRédiger votre lettre de présentation ici:\n&lt;&lt;display &quot;Sélection des choix de lettre&quot;&gt;&gt;\n\n&lt;&lt;cycle p1&gt;&gt;&lt;&lt;print $lLettre1choisis[0]&gt;&gt;&lt;&lt;becomes&gt;&gt;&lt;&lt;print $lLettre1choisis[1]&gt;&gt;&lt;&lt;becomes&gt;&gt;&lt;&lt;print $lLettre1choisis[2]&gt;&gt;&lt;&lt;endcycle&gt;&gt;\n&lt;&lt;revise p1 &quot;modifier&quot;&gt;&gt;\n\n&lt;&lt;cycle p2&gt;&gt;&lt;&lt;print $lLettre2choisis[0]&gt;&gt;&lt;&lt;becomes&gt;&gt;&lt;&lt;print $lLettre2choisis[1]&gt;&gt;&lt;&lt;endcycle&gt;&gt; &lt;&lt;print $nom&gt;&gt;. [[(Éditer le nom)|Modifier nom]]\n&lt;&lt;revise p2 &quot;modifier&quot;&gt;&gt;\n\n&lt;&lt;cycle p3&gt;&gt;&lt;&lt;print $lLettre3choisis[0]&gt;&gt;&lt;&lt;becomes&gt;&gt;&lt;&lt;print $lLettre3choisis[1]&gt;&gt;&lt;&lt;becomes&gt;&gt;&lt;&lt;print $lLettre3choisis[2]&gt;&gt;&lt;&lt;endcycle&gt;&gt;\n&lt;&lt;revise p3 &quot;modifier&quot;&gt;&gt;\n\n&lt;&lt;cycle p4&gt;&gt;&lt;&lt;print $lLettre4choisis[0]&gt;&gt;&lt;&lt;becomes&gt;&gt;&lt;&lt;print $lLettre4choisis[1]&gt;&gt;&lt;&lt;becomes&gt;&gt;&lt;&lt;print $lLettre4choisis[2]&gt;&gt;&lt;&lt;endcycle&gt;&gt;\n&lt;&lt;revise p4 &quot;modifier&quot;&gt;&gt;\n\n&lt;&lt;cycle p5&gt;&gt;&lt;&lt;print $lLettre5choisis[0]&gt;&gt;&lt;&lt;becomes&gt;&gt;&lt;&lt;print $lLettre5choisis[1]&gt;&gt;&lt;&lt;becomes&gt;&gt;&lt;&lt;print $lLettre5choisis[2]&gt;&gt;&lt;&lt;endcycle&gt;&gt;\n&lt;&lt;revise p5 &quot;modifier&quot;&gt;&gt;\n\n&lt;&lt;cycle p6&gt;&gt;&lt;&lt;print $lLettre6choisis[0]&gt;&gt;&lt;&lt;becomes&gt;&gt;&lt;&lt;print $lLettre6choisis[1]&gt;&gt;&lt;&lt;becomes&gt;&gt;&lt;&lt;print $lLettre6choisis[2]&gt;&gt;&lt;&lt;endcycle&gt;&gt;\n&lt;&lt;revise p6 &quot;modifier&quot;&gt;&gt;\n\n&lt;&lt;cycle p6B&gt;&gt;&lt;&lt;print $lLettre6Bchoisis[0]&gt;&gt;&lt;&lt;becomes&gt;&gt;&lt;&lt;print $lLettre6Bchoisis[1]&gt;&gt;&lt;&lt;becomes&gt;&gt;&lt;&lt;print $lLettre6Bchoisis[2]&gt;&gt;&lt;&lt;endcycle&gt;&gt;\n&lt;&lt;revise p6B &quot;modifier&quot;&gt;&gt;\n\n&lt;&lt;cycle p7&gt;&gt;&lt;&lt;print $lLettre7choisis[0]&gt;&gt;&lt;&lt;becomes&gt;&gt;&lt;&lt;print $lLettre7choisis[1]&gt;&gt;&lt;&lt;becomes&gt;&gt;&lt;&lt;print $lLettre7choisis[2]&gt;&gt;&lt;&lt;endcycle&gt;&gt;\n&lt;&lt;revise p7 &quot;modifier&quot;&gt;&gt;\n\nMerci,\n&lt;&lt;print $nom&gt;&gt; [[(Éditer le nom)|Modifier nom]] &lt;&lt;endreplace&gt;&gt;\n&lt;/div&gt;\n&lt;div id=&quot;boutonSoumettre&quot;&gt;\n!![[Soumettre votre candidature]]\n&lt;/div&gt;</div><div tiddler="confirmer" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">nom: &lt;&lt;print $nom&gt;&gt;\n\n[[tests de input]]\n[[confirmer]]\n[[Start]]\n\n[[test de previous previous()|previous()]]</div><div tiddler="Fix for Silently macro" tags="script-désactivé" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">//by Stormrose\n//https://groups.google.com/forum/#!msg/tweecode/xU2Fuc4J5rU/WH8ccjo9-RwJ\ntry { \n  macros['silently'].handler = function (place, macroName, params, parser) {\n    console.log('Using a custom silently macro'); \n    var buffer = insertElement(null, 'div');\n    var srcOffset = parser.source.indexOf('&gt;&gt;', parser.matchStart) + 2;\n    var src = parser.source.slice(srcOffset);\n    var endPos = -1;\n    var silentText = '';\n    var nestDepth = 0;\n\n    for (var i = 0; i &lt; src.length; i++) {\n      if (src.substr(i, 15) == '&lt;&lt;endsilently&gt;&gt;') {\n        if(nestDepth == 0) {\n          endPos = srcOffset + i + 15;\n          break;\n        } else {\n          nestDepth--;\n        }\n      } else if(src.substr(i,12) == '&lt;&lt;silently&gt;&gt;') {\n        nestDepth++;\n      } else {\n        silentText += src.charAt(i);\n      }\n    }\n\n    if (endPos != -1) {\n      new Wikifier(buffer, silentText);\n      parser.nextMatch = endPos;\n    } else {\n      throwError(place, &quot;can't find matching endsilently&quot;);\n      delete buffer;\n    }\n  }\n\n} catch(e) { \n  throwError(place,&quot;Custom Macros Error: &quot;+e.message); \n}</div><div tiddler="afficher tout" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">&lt;&lt;print $lSkills&gt;&gt;\n\n\n&lt;&lt;print $lPostes&gt;&gt;\n\n\n&lt;&lt;print $lStudios&gt;&gt;\n\n\n&lt;&lt;print $lDescriptions&gt;&gt;</div><div tiddler="init lLettre1" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">&lt;&lt;set $lLettre1 = [ &quot;Madame, Monsieur,&quot;, &quot;Salut [nom du studio] !&quot;, &quot;Bonjour [nom du studio],&quot;, &quot;Bonjour,&quot;, &quot;À qui de droit,&quot;, &quot;Au responsable des ressources humaines,&quot;]&gt;&gt;</div><div tiddler="Tu reçois une réponse!" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">Tu as reçu une réponse!\n&lt;&lt;continue &quot;!!!!OMG!&quot;&gt;&gt;!!!!OMG!\n&lt;&lt;continue &quot;!!!OMG!&quot;&gt;&gt;!!!OMG!\n&lt;&lt;continue &quot;!!OMG!&quot;&gt;&gt;!!OMG!\n&lt;&lt;continue &quot;!OMG!&quot;&gt;&gt;!OMG!\n\n[[Lire la réponse]]</div><div tiddler="raccourcis" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">[[Level up!]]\n[[1 semaine passe]]\n[[Postuler raccourcis]]\n[[créer mot de passe]]\n[[Débuter (title screen)|Débuter]]</div><div tiddler="init lLettre2" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">&lt;&lt;set $lLettre2 = [ &quot;Je suis&quot;, &quot;Je m’appelle&quot;]&gt;&gt;</div><div tiddler="init lLettre5" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">&lt;&lt;set $lLettre5 = [ &quot;J’ai travaillé autant sur des projets de jeux mobiles ou casual que triple-A en tant que testeur, chef d'équipe, game designer ou level designer. &quot;, &quot;J’ai déjà travaillé comme testeur et comme chef d’équipe.&quot;, &quot;Je suis testeur chez VMC.&quot;, &quot;[mentir] Je suis un game designer réputé.&quot;, &quot;J’ai travaillé sur des jeux mobiles.&quot;, &quot;J’ai travaillé sur des jeux triple-A.&quot;, &quot;J’ai travaillé autant sur des triple A que des jeux mobiles.&quot;, &quot;[mentir] J’ai été game designer et level designer sur d'autres projets.&quot;, &quot;J’ai fait un stage en game design et level design.&quot;, &quot;Je n'ai aucune expérience. &quot;]&gt;&gt;</div><div tiddler="init lLettre4" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">&lt;&lt;set $lLettre4 = [ &quot;Je veux faire application.&quot;, &quot;Je veux travailler chez vous.&quot;, &quot;[mentir] J’ai vraiment envie de travailler chez vous.&quot;, &quot;J’ai vraiment envie de travailler chez [nom du studio]. &quot;, &quot;[mentir] J’ai entendu parlé de votre studio et ça m’intéresse.&quot;, &quot;J’ai entendu parlé de votre studio et ça m’intéresse. &quot;, &quot;[nom du studio] me semble vraiment intéressant et je vous envoie donc ma candidature.&quot;, &quot;[mentir] [nom du studio], c’est genre la place cool de mes rêve.&quot;, &quot;[nom du studio], c’est genre la place cool de mes rêves! [Mensonge??]&quot;, &quot;Mon projet actuel s’est terminé et je suis à la recherche de nouveaux projets intéressants.&quot;, &quot;Je cherche particulièrement pour des postes de game designer ou level designer.&quot;, &quot;Je voudrais poser ma candidature au poste de [nom du poste] qui est annoncé sur votre site web.&quot;]&gt;&gt;</div><div tiddler="test once et later" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">Once: &lt;&lt;once&gt;&gt;something&lt;&lt;gains&gt;&gt; pet&lt;&lt;endonce&gt;&gt;\n\nLater: &lt;&lt;later&gt;&gt;something &lt;&lt;gains&gt;&gt;pet&lt;&lt;endlater&gt;&gt;\n\n[[test once et later]]</div><div tiddler="init lLettre6" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">&lt;&lt;set $lLettre6 = [ &quot;J’aime analyser mes créations et celles des autres avec un esprit critique.&quot;, &quot;Je veux réaliser des jeux qui seront amusants et mémorables. &quot;, &quot;Je veux réaliser des jeux qui seront amusants et mémorables et [mentir] je sais que [nom du studio] est la place pour ça.&quot;, &quot;Je travaille efficacement en équipe et je communique facilement de façon claire et concise. &quot;, &quot;Je recherche un emploi où je pourrai démontrer mes talents de programmation Java et C++.&quot;, &quot;Je désire travailler dans une grande compagnie de jeux telle que [nom du studio] et apporter de nouvelles idées qui permettront de peaufiner vos licences actuelles. &quot;, &quot;Je connais quelqu’un qui travaille chez vous et ça a l’air d’une place intéressante.&quot;, &quot;[Mentir] Je connais quelqu’un qui travaille chez vous.&quot;, &quot;Je suis un passionné de jeux vidéo avec de la créativité à revendre. &quot;, &quot;Je suis intéressé par l'art numérique et j'ai étudié en informatique et en cinéma.&quot;, &quot;Ma principale force consiste à trouver aisément des solutions ingénieuses aux problèmes concrets.&quot;, &quot;Ma principale force consiste à travailler efficacement en équipe. &quot;, &quot;Après avoir travaillé dans plusieurs gros studios, je veux maintenant réorienter ma carrière vers les plus petits studios.&quot;, &quot;J'aime l'énergie et la créativité. Ça me nourrit!&quot;, &quot;J'ai de nombreuses années d'expérience dans le domaine, en particulier sur les consoles mobiles.  &quot;, &quot;J'ai vu sur votre site web que vous ne semblez pas présentement rechercher pour de tels postes, alors peut-être que vous seriez plutôt intéressé par un excellent testeur QA? &quot;, &quot;Je joins mon portfolio où vous pourrez constater mes talents pour le prototypage.&quot;, &quot;Je joins mon portfolio où vous pourrez constater mes connaissances de plusieurs engins de jeux.&quot;, &quot;[mentir] Je suis expert de Unreal Engine et UDK.&quot;, &quot;[mentir] Je suis expert de Unity 3D.&quot;, &quot;[mentir] Je suis pro avec Adobe Flash.&quot;, &quot;Je m’y connais bien avec les engins de jeux gratuits tels Construct et Blender.&quot;, &quot;Je joins mon portfolio où vous trouverez notamment des boardgames très amusants.&quot;, &quot;Même si je ne suis pas programmeur en tant que tel, renter dans le code pour scripter mes mécaniques de jeux ne me fait pas peur.&quot;, &quot;Je suis également doué pour le design de systèmes et le balancing.&quot;, &quot;Je pense qu'il s'agit de compétences qui seront particulièrement utile dans un petit studio comme le vôtre où les employés doivent être versatiles et polyvalents. &quot;, &quot;Je suis d’avis que le game design et le level design sont des disciplines très similaires. &quot;, &quot;Un bon design de niveau avec une bonne architecture peut, par lui-même, être une forme de narration qui sera mémorable pour le joueur. &quot;, &quot;Le fait que j’ai travaillé sur autant de projets variés dans différents studios m’a donné une vision très large de l’industrie.&quot;, &quot;J’ai eu très souvent à apprendre de nouveaux logiciels et j’ai su à chaque fois m’adapter rapidement.  &quot;, &quot;Ce sont des idées que j'ai pu mettre en pratique sur mes projets précédents et que j'espère pouvoir continuer de perfectionner chez vous. &quot;, &quot;Peu importe quel outils internes vous utilisez pour ce projet, je saurai m’adapter. Après tout, l’outil reste toujours au service des idées et non l’inverse!&quot;, &quot;Mon portfolio est évidemment plus orienté vers le game design, mais vous pourrez  observer certains projets où j’ai travaillé aussi sur la création de niveaux. &quot;, &quot;[mentir] J’ai déjà travaillé avec le « big data » donc je vais pouvoir vous aider avec ça.&quot;, &quot;Je sais me débrouiller avec le modèle free-to-play mais je veux en apprendre d’avantage.&quot;, &quot;Engagez-moi: je suis bon.&quot;, &quot;Je n'ai aucune expérience. S'il vous plaît engagez moi. Je suis bon. &quot;, &quot;Je veux travaillez chez vous parce que j’ai besoin d’argent rapidement.&quot;, &quot;Je ne veux pas rester QA toute ma vie.&quot;, &quot;J’ai déjà travaillé pour vous et j’ai bien aimé l’ambiance du studio. J’aimerais revenir.&quot;, &quot;Je pense devenir un designer performant chez [nom du studio].&quot;, &quot;Mon premier jeu, que vous trouverez dans mon portfolio, mettait de l’avant la narration.&quot;, &quot;Mon dernier projet était un jeu multijoueur coop.&quot;, &quot;Mon dernier projet était un jeu multiplayer.&quot;, &quot;J’ai déjà travaillé sur ce genre de projet.&quot;, &quot;J’aime l’exploration dans les jeux vidéo.&quot;, &quot;L’important dans un jeu, c’est le gameplay.&quot;, &quot;Mon dernier projet a reçu des critiques élogieuses de la part de site obscurs.&quot;, &quot;[Mentir] Mon dernier projet a été sur plusieurs listes des GOTY.&quot;, &quot;J'ai travaillé autant sur des jeux à large déploiement que sur des jeux sociaux ou mobiles. &quot;, &quot;Je suis quelqu'un de très ironique dans la vie.&quot;]&gt;&gt;</div><div tiddler="Debug" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">[[raccourcis]]\n\n[[afficher tout]]\n\n[[afficher lettres]]\n\n[[tests de macro replace etc]]\n\n[[tests de input]]\n\n[[tests de tableaux]]\n\n[[test either]]\n\n[[test once et later]]\n\n[[test de line break]]\n\n[[tests de continue]]</div><div tiddler="afficher lettres" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">&lt;&lt;print $lLettre1&gt;&gt;\n\n\n&lt;&lt;print $lLettre2&gt;&gt;\n\n\n&lt;&lt;print $lLettre3&gt;&gt;\n\n\n&lt;&lt;print $lLettre4&gt;&gt;\n\n\n&lt;&lt;print $lLettre5&gt;&gt;\n\n\n&lt;&lt;print $lLettre6&gt;&gt;\n\n\n&lt;&lt;print $lLettre7&gt;&gt;</div><div tiddler="Game Over" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">Tu n'as pas réussi à trouver un emploi à temps.\n\nIl ne te resque presque plus d'argent. Le petit peu qu'il te reste devra servir à payer les dernières factures. Et il faudra vendre le condo. Les prix des condos de Montréal ont baissés, c'est sûr que tu vas perdre plein d'argent...\n\nTu vas devoir retourner vivre chez tes parents. Ils vont sûrement devoir te prêter de l'argent. Et tu vas devoir retourner travailler comme foutu testeur pour rembourser tout le monde.\n\nTesteur!\n\n[[La honte!|Débuter]]</div><div tiddler="Fix for variable in a Display" tags="script-désactivé" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">//From CodeDuck\n//https://groups.google.com/forum/#!msg/tweecode/9OggpvgERWA/i3RLK18Ajc4J\ntry { \n\tmacros['display'].handler = function (a,b,c,d) {\n\t\ttry { \n\t\t\t\tnew Wikifier(a,tale.get(eval(d.fullArgs())).text) \n\t\t}\n\t\tcatch(e) {\n\t\t\t\tnew Wikifier(a,tale.get(c[0]).text) \n\t\t} \n\t}\n}\ncatch(e) {\n\tthrowError(place,&quot;Error in MyMacro - Display variable link!&quot;);\n}</div><div tiddler="Modifier nom" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">Modification de vos informations personnelles\n\nVotre nom tel qu'inscrit à nos dossier: &lt;&lt;print $nom&gt;&gt;\n\nEntrez votre nom complet ici: &lt;&lt;textinput $nom [[ok|previous()]]&gt;&gt;\n\n[[Annuler|previous()]]</div><div tiddler="init lStudios" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">&lt;&lt;set $lStudios = [ &quot;3Mind Games&quot;, &quot;Article 19&quot;, &quot;Artifice Studio&quot;, &quot;Behaviour&quot;, &quot;Bioware&quot;, &quot;BlooBuzz Games&quot;, &quot;Blue Lizard Games&quot;, &quot;Braintonik&quot;, &quot;Budge Studios&quot;, &quot;ByHumans&quot;, &quot;Cellfish&quot;, &quot;Compulsion Games&quot;, &quot;Crankshaft Games&quot;, &quot;Creo&quot;, &quot;Cyanide Studio&quot;, &quot;D2P Games&quot;, &quot;Decode Global&quot;, &quot;Digital Extreme Studios&quot;, &quot;Dijiko&quot;, &quot;Double Stallion Games&quot;, &quot;DTI Software&quot;, &quot;EA&quot;, &quot;EA Mobile&quot;, &quot;EdgeBee Studios&quot;, &quot;Eidos&quot;, &quot;Eternal Outcasts&quot;, &quot;Evillusion&quot;, &quot;Fidel&quot;, &quot;Flying Carpets Games&quot;, &quot;Fugitive Interactive&quot;, &quot;Funcom&quot;, &quot;Gameloft&quot;, &quot;Gamerizon Studios&quot;, &quot;Gamesbymo&quot;, &quot;Golem Labs&quot;, &quot;Half Serious&quot;, &quot;Hemisphere Games&quot;, &quot;Heroes Never Lose&quot;, &quot;Hibernum Creations&quot;, &quot;Hololabs&quot;, &quot;Illogika Studios&quot;, &quot;Imaginary Games&quot;, &quot;Iron Belly Studios&quot;, &quot;Kitfox Games&quot;, &quot;Kutoka Interactive&quot;, &quot;Lazy Nuke Games&quot;, &quot;Lightning Rod Games&quot;, &quot;Longtail Studios&quot;, &quot;Loopycube&quot;, &quot;Ludia&quot;, &quot;Madsoft Games Inc.&quot;, &quot;Massive Finger&quot;, &quot;Meridian 4&quot;, &quot;Minimal Move&quot;, &quot;Minority Media&quot;, &quot;Miralupa&quot;, &quot;Miscellaneum Studios&quot;, &quot;Nditeravision&quot;, &quot;Neggi Studio&quot;, &quot;North Side Inc.&quot;, &quot;Nventive&quot;, &quot;Pixel Crucible&quot;, &quot;Pixilabs Software Inc.&quot;, &quot;Rebelius Studio&quot;, &quot;Red Barrels&quot;, &quot;Roofdog Games&quot;, &quot;Sarbakan&quot;, &quot;Sauropod&quot;, &quot;Sava Transmedia&quot;, &quot;Side City Studios&quot;, &quot;Skyriser&quot;, &quot;Spearhead&quot;, &quot;Square Enix&quot;, &quot;Strategy First&quot;, &quot;Talented Frogs Studio&quot;, &quot;Tartine Games&quot;, &quot;Tobogan&quot;, &quot;Totemic Studios&quot;, &quot;Tribal Nova&quot;, &quot;Tribute Games&quot;, &quot;TrioTech&quot;, &quot;Ubisoft&quot;, &quot;Vandal Games&quot;, &quot;Warner Bros&quot;, &quot;Wicked Studios&quot;, &quot;Wild Games Studio&quot;, &quot;Woozworld&quot;, &quot;XperimentalZ Games&quot;, &quot;Z3D&quot;]&gt;&gt;</div><div tiddler="init lSkills" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">&lt;&lt;set $lSkills = [ &quot;Créativité&quot;, &quot;Design&quot;, &quot;Écriture&quot;, &quot;Relations humaines&quot;, &quot;3D&quot;, &quot;2D&quot;, &quot;Programmation&quot;, &quot;Scripting&quot;, &quot;Assurance Qualité&quot;, &quot;Recherche d'emplois&quot;]&gt;&gt;</div><div tiddler="test de line break" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">1/\n2\s\n3\n&lt;&lt;nobr&gt;&gt;\n4\n\n5\n\n\n6\n&lt;&lt;endnobr&gt;&gt;</div><div tiddler="CSS fix for the Combined Replace macro" tags="stylesheet" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">.revision-span-in {\n\topacity: 0;\n}\n.revision-span:not(.revision-span-out) {\n\ttransition: 1s; -webkit-transition: 1s;\n}\n.revision-span-out {\n\tposition:absolute;\n\topacity: 0;\n}</div><div tiddler="init lLettre3" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">&lt;&lt;set $lLettre3 = [ &quot;Je suis testeur chez VMC.&quot;, &quot;[mentir] Je suis game designer et j’ai déjà 3 ans d’expérience dans l’industrie.&quot;, &quot;[mentir] Je suis game designer et j’ai déjà 2 ans d’expérience dans l’industrie.&quot;, &quot;[mentir] Je suis game designer et j’ai déjà 1 ans d’expérience dans l’industrie.  &quot;, &quot;[mentir] Je suis level designer.&quot;, &quot;Je suis testeur depuis 1 ans.&quot;, &quot;[mentir] Je suis testeur depuis 2 ans.&quot;, &quot;[mentir] Je suis testeur depuis 3 ans. &quot;, &quot;Je suis étudiant en informatique, passionné par les arts multimédias et les jeux vidéo. &quot;, &quot;Je suis étudiant en cinéma.&quot;, &quot;Je suis étudiant en études cinématographiques.&quot;, &quot;Je suis finissant du programme de game design à l’université.&quot;, &quot;Je suis un concepteur de jeux détenant le diplôme en Design de Jeux de l'Université de Montréal. &quot;, &quot;Je suis un étudiant miteux et nerds.&quot;]&gt;&gt;</div><div tiddler="script pour mettre le footer à la bonne place" tags="script" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">document.body.appendChild( document.getElementById(&quot;storyAuthor&quot;) );</div><div tiddler="CSS custom" tags="stylesheet" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">body {\n\tfont-family: &quot;Helvetica Neue&quot;,Helvetica,Arial,sans-serif;\n\tmargin: 0px;\n\tbackground-color: gray;\n\tbackground-image: url(background.png);\n\tbackground-attachment: fixed;\n\tcolor: rgb(216, 216, 216);\n}\n\n#narF_middlewrapper {\n\twidth: 800px;\n\tmargin-top: 32px;\n\tmargin-left: auto;\n\tmargin-right: auto;\n\tmargin-bottom: 100px;\n\tborder-radius: 20px;\n\tbackground-color: rgba(0, 0, 0, 0.78);\n\tpadding-bottom: 2em;\n\tpadding-top: 2em;\n}\n\n#title {\n\ttext-align: center;\n\tmargin-bottom: 2.5em;\n\tmargin-left: 2em;\n\tmargin-right: 2em;\n\tcolor: rgba(255, 255, 255, 0.86);\n}\n\n#storyTitle {\n\tfont-size: 4em;\n\tline-height: 140%;\n\tfont-weight: bold;\n}\n\n#storySubtitle {\n\tfont-size: 0.8em;\n}\n\n#storyAuthor {\n\tdisplay: block;\n\tfont-size: 1.2em;\n\tposition: fixed;\n\tbottom: 10px;\n\tleft: 10px;\n\n\tbackground-color: rgba(201, 201, 201, 0.45);\n\tcolor: black;\n\tpadding: 10px;\n\tborder: 2px solid rgba(255, 255, 255, 0.69);\n\tborder-radius: 9px;\n}\n\n#storyAuthor div {\n\tdisplay: inline-block;\n\tpadding: 1em;\n}\n\n#storyAuthor img {\n\theight: 4em;\n\twidth: auto;\n}\n\n#storyAuthor a {\n\tcolor: rgb(5, 46, 179);\n}\n\n#storyAuthor a:hover {\n\tcolor: rgb(74, 84, 197);\n}\n\n#sidebar {\n\tvisibility: hidden;\n}\n\n#passages {\n\tmargin-right: 2em;\n\tmargin-left: 2em;\n\tmargin-bottom: 2em;\n/* overflow: auto; */\n\ttext-align: justify;\n\tfont-size: 1.7em;\n\tline-height: 1.6em;\n\tborder: none;\n\tpadding-left: 0;\n}\n\n.passage {\n}\n\na.internalLink,a.externalLink,a.back,a.return {\n\tcolor: #6D6D6D;\n}\n\na.internalLink:hover,a.externalLink:hover,a.back:hover,a.return:hover {\n\tcolor: #E0E0E0;\n}\n\n#restart {\n\tposition: fixed;\n\tleft: 20px;\n\ttop: 20px;\n\tpadding: 5px;\n\tword-spacing: -999px;\n\tletter-spacing: -999px;\n}\n\n#restart:after {\n\tcontent: &quot;Recommencer l'histoire&quot;;\n\tvisibility: visible;\n\tpadding: 5px;\n\tborder-radius: 7px;\n\tborder: 3px solid rgb(250, 0, 0);\n\tbackground-color: rgb(255, 97, 97);\n\tcolor: rgb(202, 0, 0)!important;\n\tcursor: pointer;\n\tword-spacing: normal;\n\tletter-spacing: normal;\n}\n\n#restart:hover:after {\n\tbackground-color: rgb(255, 131, 152);\n\tcolor: rgb(109, 1, 1)!important;\n}\n\n\n.passage[data-tags~=&quot;scale_images&quot;] {\n\tfont-style: italic;\n}\n\n.passage[data-tags~=&quot;scale_images&quot;] img {\n\twidth: 100%;\n\theight: auto;\n}\n\n.passage[data-tags~=&quot;heure&quot;] {\n\tbackground-color: black;\n\tposition: fixed;\n\twidth: 100%;\n\theight: 100%;\n\tleft: 0px;\n\ttop: 0px;\n\tz-index: 1;\n}\n\n.passage[data-tags~=&quot;heure&quot;] .content {\n\theight: 1em;\n\tline-height: 1em;\n\tmargin: auto;\n\tposition: absolute;\n\ttop: 0;\n\tleft: 0;\n\tbottom: 0;\n\tright: 0;\n\ttext-align: center;\n\tfont-size: 5em;\n}\n\n.passage[data-tags~=&quot;heure&quot;] a {\n\ttext-decoration: none;\n}\n\n.passage[data-tags~=&quot;heure&quot;] .header, .passage[data-tags~=&quot;heure&quot;] .footer {\n\tdisplay: none;\n}\n\n.passage[data-tags~=&quot;center&quot;] {\n\ttext-align: center;\n}\n\n.passage[data-tags~=&quot;statistique&quot;] span {\n\tfont-size: 150%;\n\tcolor: black;\n\tbackground-color: white;\n\tdisplay: block;\n\tpadding: 2em;\n\tpadding-top: 1em;\n\ttext-align: left;\n}\n\n#sectionGauche, #sectionDroite {\n\twidth: 49%;\n\tfont-size: 0.8em;\n\tline-height: initial;\n\tborder-radius: 20px;\n}\n\n#sectionGauche {\n\tfloat: left;\n\tbackground-color: black;\n\tmargin: -1em 0 0 -1.5em;\n\tpadding: 1em;\n}\n\n#sectionDroite {\n\tfloat: right;\n\ttop: -2em;\n\tposition: relative;\n\tbackground-color: rgb(49, 0, 0);\n\tmargin: -1em -1.5em 0 0;\n\tpadding: 0.7em;\n}\n\n#sectionGauche li {\n\tmargin-right: 0;\n\tline-height: 1.7em;\n}\n\n#boutonSoumettre {\n\tclear: both;\n\ttext-align: center;\n}\n\n#mdpErreur {\n\tcolor: red;\n\tfont-size: 80%;\n\tline-height: normal;\n}\n\n\n\n\n\n\n\n\n/*\nPas sûr que cette ligne là (ci-dessous) marche.\nGenre, je sais pas si la virgule était supposé être un ET ou un OU, et je sais pas comment traduire ça dans cette nouvelle nomenclature (dans le html vs dans le css direct)\n*/\n@media (max-width: 800px), (max-device-width: 640px), (max-device-width: 680px) {\n\tbody {\n\t\tmargin: 0;\n\t\twidth: 100%;\n\t\t/*debug stuff:\n\t\tbackground-color: pink;\n\t\tbackground-image: none;\n\t\t*/\n\t}\n\n\t#narF_middlewrapper {\n\t\twidth: 95%;\n\t\tmargin-bottom: 2em;\n\t\tmargin-left: auto;\n\t\tmargin-right: auto;\n\t}\n\n\t#passages {\n\t\tmargin: auto;\n\t\tpadding-left: 1em;\n\t\tpadding-right: 1em;\n\t}\n\n\t#restart {\n\t\tleft: 0.5em;\n\t\ttop: 0.5em;\n\t}\n\n\t#storyAuthor {\n\t\tposition: relative;\n\t\twidth: 20em;\n\t\tmargin-left: auto;\n\t\tmargin-right: auto;\n\t}\n}\n\n/* Spécifique au iPod et petits devices */\n@media (max-device-width: 680px) {\n\tbody {\n\t\tfont-size: 2em;\n\t}\n\n\t#title {\n\t\tfont-size: 1.4em;\n\t}\n\n\t#storyAuthor {\n\t\tmargin-bottom: 2em;\n\t}\n}</div><div tiddler="Sélection des choix de lettre" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">&lt;&lt;silently&gt;&gt;\n\nNombre de choix de phrases\n&lt;&lt;set $réduction = 3&gt;&gt;\n\nRéduire chaque tableau jusqu'à avoir le nombre de choix ci-haut.\n&lt;&lt;set $lLettre1choisis = $lLettre1.concat()&gt;&gt;\n&lt;&lt;set $tableauARéduire = $lLettre1choisis&gt;&gt;\n&lt;&lt;display &quot;réduire tableau&quot;&gt;&gt;\n\n&lt;&lt;set $lLettre2choisis = $lLettre2&gt;&gt;\n\n&lt;&lt;set $lLettre3choisis = $lLettre3.concat()&gt;&gt;\n&lt;&lt;set $tableauARéduire = $lLettre3choisis&gt;&gt;\n&lt;&lt;display &quot;réduire tableau&quot;&gt;&gt;\n\n&lt;&lt;set $lLettre4choisis = $lLettre4.concat()&gt;&gt;\n&lt;&lt;set $tableauARéduire = $lLettre4choisis&gt;&gt;\n&lt;&lt;display &quot;réduire tableau&quot;&gt;&gt;\n\n&lt;&lt;set $lLettre5choisis = $lLettre5.concat()&gt;&gt;\n&lt;&lt;set $tableauARéduire = $lLettre5choisis&gt;&gt;\n&lt;&lt;display &quot;réduire tableau&quot;&gt;&gt;\n\n&lt;&lt;set $lLettre6choisis = $lLettre6.concat()&gt;&gt;\n&lt;&lt;set $tableauARéduire = $lLettre6choisis&gt;&gt;\n&lt;&lt;display &quot;réduire tableau&quot;&gt;&gt;\n\n&lt;&lt;set $lLettre6Bchoisis = $lLettre6.concat()&gt;&gt;\n&lt;&lt;set $tableauARéduire = $lLettre6Bchoisis&gt;&gt;\n&lt;&lt;display &quot;réduire tableau&quot;&gt;&gt;\n\n&lt;&lt;set $lLettre7choisis = $lLettre7.concat()&gt;&gt;\n&lt;&lt;set $tableauARéduire = $lLettre7choisis&gt;&gt;\n&lt;&lt;display &quot;réduire tableau&quot;&gt;&gt;\n\n\nChanger les [nom du studio] pour les vraies valeurs:\n&lt;&lt;set $lLettre1choisis[0] = $lLettre1choisis[0].replace(&quot;[nom du studio]&quot;, $offres[$numero][1])&gt;&gt;\n&lt;&lt;set $lLettre1choisis[1] = $lLettre1choisis[1].replace(&quot;[nom du studio]&quot;, $offres[$numero][1])&gt;&gt;\n&lt;&lt;set $lLettre1choisis[2] = $lLettre1choisis[2].replace(&quot;[nom du studio]&quot;, $offres[$numero][1])&gt;&gt;\n\n&lt;&lt;set $lLettre4choisis[0] = $lLettre4choisis[0].replace(&quot;[nom du studio]&quot;, $offres[$numero][1])&gt;&gt;\n&lt;&lt;set $lLettre4choisis[1] = $lLettre4choisis[1].replace(&quot;[nom du studio]&quot;, $offres[$numero][1])&gt;&gt;\n&lt;&lt;set $lLettre4choisis[2] = $lLettre4choisis[2].replace(&quot;[nom du studio]&quot;, $offres[$numero][1])&gt;&gt;\n\n&lt;&lt;set $lLettre6choisis[0] = $lLettre6choisis[0].replace(&quot;[nom du studio]&quot;, $offres[$numero][1])&gt;&gt;\n&lt;&lt;set $lLettre6choisis[1] = $lLettre6choisis[1].replace(&quot;[nom du studio]&quot;, $offres[$numero][1])&gt;&gt;\n&lt;&lt;set $lLettre6choisis[2] = $lLettre6choisis[2].replace(&quot;[nom du studio]&quot;, $offres[$numero][1])&gt;&gt;\n\n&lt;&lt;set $lLettre6Bchoisis[0] = $lLettre6Bchoisis[0].replace(&quot;[nom du studio]&quot;, $offres[$numero][1])&gt;&gt;\n&lt;&lt;set $lLettre6Bchoisis[1] = $lLettre6Bchoisis[1].replace(&quot;[nom du studio]&quot;, $offres[$numero][1])&gt;&gt;\n&lt;&lt;set $lLettre6Bchoisis[2] = $lLettre6Bchoisis[2].replace(&quot;[nom du studio]&quot;, $offres[$numero][1])&gt;&gt;\n\n\nChanger les [nom du poste] pour les vraies valeurs:\n&lt;&lt;set $lLettre4choisis[0] = $lLettre4choisis[0].replace(&quot;[nom du poste]&quot;, $offres[$numero][0])&gt;&gt;\n&lt;&lt;set $lLettre4choisis[1] = $lLettre4choisis[1].replace(&quot;[nom du poste]&quot;, $offres[$numero][0])&gt;&gt;\n&lt;&lt;set $lLettre4choisis[2] = $lLettre4choisis[2].replace(&quot;[nom du poste]&quot;, $offres[$numero][0])&gt;&gt;\n\n\n&lt;&lt;endsilently&gt;&gt;</div><div tiddler="annuler mot de passe" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">Attention!\n\nSi vous n'entrez pas de mot de passe, vous ne pourrez pas sauvegarder vos lettres de présentation. Êtes-vous sûr de ne pas vouloir utiliser cette fonction?\n\n[[Oui|Soumettre votre candidature]]         [[Non|créer mot de passe]]</div><div tiddler="tests de continue" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">asdf\n&lt;&lt;insert &quot;test&quot;&gt;&gt;\nasdf\n&lt;&lt;gains&gt;&gt;\nasdf\n&lt;&lt;gains&gt;&gt;\nasdf\n&lt;&lt;endinsert&gt;&gt;\n\n\nTu as reçu une réponse!!!\n\n&lt;&lt;continue &quot;!!!!!OMG!&quot;&gt;&gt;!!!!!OMG!\n&lt;&lt;continue &quot;!!!!OMG!&quot;&gt;&gt;!!!!OMG!\n&lt;&lt;continue &quot;!!!OMG!&quot;&gt;&gt;!!!OMG!\n&lt;&lt;continue &quot;!!OMG!&quot;&gt;&gt;!!OMG!\n&lt;&lt;continue &quot;!OMG!&quot;&gt;&gt;!OMG!\n\n[[Lire la réponse]]</div><div tiddler="StoryAuthor" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">&lt;a href=&quot;http://blogue.narF.ca&quot;&gt;&lt;img src=&quot;https://googledrive.com/host/0B84h5_moDy34SWFpeFp6TGozME0/images%20pour%20Blogger/narF_85x80.png&quot; class=&quot;centrerVertical&quot;&gt;&lt;/a&gt;&lt;div class=&quot;centrerVertical&quot;&gt;Francis &quot;narF&quot; Sheridan Paré&lt;br/&gt;(&lt;a href=&quot;http://blogue.narF.ca&quot; target=&quot;_new&quot;&gt;Blogue&lt;/a&gt;, &lt;a href=&quot;http://facebook.narF.ca&quot; target=&quot;_new&quot;&gt;Facebook&lt;/a&gt;, &lt;a href=&quot;http://twitter.narF.ca&quot; target=&quot;_new&quot;&gt;Twitter&lt;/a&gt;)&lt;/div&gt;</div><div tiddler="init lLettre7" tags="" modified="201402191112" created="201402191112" twine-position="0,0" modifier="twee">&lt;&lt;set $lLettre7 = [ &quot;Si vous avez des questions, il me fera plaisir d’en discuter avec vous.&quot;, &quot;Si vous avez des questions sur mon portfolio, il me fera plaisir d’en discuter avec vous. &quot;, &quot;Si vous avez des questions ou si vous voulez mes lettres de références, n'hésitez pas à me rejoindre par courriel.&quot;, &quot;Si vous avez des questions, n’hésitez pas à me joindre.&quot;, &quot;Si vous avez des questions, n’hésitez pas à m’appeler. &quot;, &quot;J’espère avoir de vos nouvelles bientôt! &quot;, &quot;Engagez-moi s’il vous plait.&quot;, &quot;Dépêchez-vous de me répondre.&quot;, &quot;J’attends votre réponse avec impatience.&quot;, &quot;J’espère avoir de vos nouvelles très bientôt!&quot;, &quot;J’ai hâte de vous rencontrer en entrevue!&quot;, &quot;J’espère vous rencontrer en entrevue.&quot;]&gt;&gt;</div></div></body></html>
+
