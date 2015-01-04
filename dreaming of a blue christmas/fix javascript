@@ -1,8 +1,0 @@
-<!-- This snipet below fix the bug where the javascript passage is not executed-->
-<!-- Place it just before the closing </body> tag-->
-<script>
-$("[role=script]").each(function(i) {try {eval($(this).html());} catch (e) {alert("There is a problem with this story's script (#" + (i + 1) + "):\n\n" + e.message);}});
-$("[role=stylesheet]").each(function(i) {$(document.head).after('<style data-title="Story stylesheet ' + (i + 1) + '">' + $(this).html());});
-</script>
-<!-- End spipet-->
-
